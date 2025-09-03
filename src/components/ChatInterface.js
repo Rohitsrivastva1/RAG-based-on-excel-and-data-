@@ -72,6 +72,23 @@ const ChatInterface = ({ sessionId }) => {
       setTypingMessage(assistantMessage);
       setMessages(prev => [...prev, assistantMessage]);
       
+      // Store visualization data for Visualization component
+      if (result.visualization && result.visualization.data) {
+        const vizData = {
+          config: result.visualization,
+          chart_type: result.visualization.type || 'bar',
+          query_id: Date.now(),
+          timestamp: new Date().toISOString()
+        };
+        localStorage.setItem(`viz_${sessionId}`, JSON.stringify(vizData));
+        // Trigger storage event for Visualization component
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: `viz_${sessionId}`,
+          newValue: JSON.stringify(vizData),
+          storageArea: localStorage
+        }));
+      }
+      
     } catch (error) {
       console.error('Error asking question:', error);
       

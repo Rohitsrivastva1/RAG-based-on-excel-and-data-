@@ -62,16 +62,14 @@ class EmbeddingManager:
         self.indices = {}  # Store indices by session_id
         self.documents = {}  # Store documents by session_id
         
-        # Initialize embedding model - use HuggingFace by default (no API key needed)
-        if embedding_model == "openai":
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key and api_key != "your_openai_api_key_here":
-                self.embedder = OpenAIEmbedding(api_key=api_key)
-            else:
-                print("Warning: OpenAI API key not found or invalid. Using HuggingFace fallback.")
-                self.embedder = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        else:
+        # Force HuggingFace embeddings to avoid API key issues
+        print("🔧 Initializing HuggingFace embeddings (no API key required)")
+        try:
             self.embedder = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            print("✅ HuggingFace embeddings initialized successfully")
+        except Exception as e:
+            print(f"❌ Error initializing HuggingFace embeddings: {e}")
+            raise RuntimeError(f"Failed to initialize embeddings: {e}")
     
     def create_documents_from_dataframe(self, df: pd.DataFrame, session_id: str) -> List[Document]:
         """Convert DataFrame to LlamaIndex Documents"""

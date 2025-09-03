@@ -138,6 +138,10 @@ class LLMAgent:
             def pandas_tool(query: str) -> str:
                 """Execute pandas operations on the existing DataFrame"""
                 try:
+                    # Prevent plotting operations
+                    if any(plot_lib in query.lower() for plot_lib in ['matplotlib', 'plt.', 'seaborn', 'sns.', 'plotly', 'fig.', 'chart', 'graph']):
+                        return "Error: Chart creation is not allowed. Please use pandas operations only for data analysis."
+                    
                     # Execute the query in the context where df is available
                     # Make sure df is in the local scope
                     local_vars = {'df': df}
@@ -149,7 +153,7 @@ class LLMAgent:
             # Create the tool
             pandas_tool_obj = Tool(
                 name="pandas_analysis",
-                description="Execute pandas operations on the DataFrame. Use 'df' to refer to the DataFrame.",
+                description="Execute pandas operations on the DataFrame. Use 'df' to refer to the DataFrame. DO NOT create charts or visualizations - only data analysis operations.",
                 func=pandas_tool
             )
             
@@ -165,10 +169,13 @@ The DataFrame has the following structure:
 IMPORTANT: The DataFrame 'df' is already available. Do NOT create a new DataFrame.
 Use the existing 'df' variable directly for all operations.
 
+CRITICAL: DO NOT create charts, graphs, or visualizations. Only perform data analysis operations.
+
 Question: {{input}}
 
 Use the pandas_analysis tool to execute your operations on the existing DataFrame.
 Always use 'df' to refer to the DataFrame.
+Only perform data analysis - no plotting or visualization.
 
 {{agent_scratchpad}}
 """)
@@ -236,7 +243,23 @@ Always use 'df' to refer to the DataFrame.
             intent["type"] = "general"
         
         # Determine visualization type
-        if "bar" in query_lower or "column" in query_lower:
+        if ("chart" in query_lower or "graph" in query_lower or "plot" in query_lower or 
+            "visualize" in query_lower or "show" in query_lower or "display" in query_lower):
+            # Set visualization type based on context
+            if "bar" in query_lower or "column" in query_lower:
+                intent["visualization"] = "bar"
+            elif "line" in query_lower or "trend" in query_lower:
+                intent["visualization"] = "line"
+            elif "pie" in query_lower or "donut" in query_lower:
+                intent["visualization"] = "pie"
+            elif "scatter" in query_lower:
+                intent["visualization"] = "scatter"
+            elif "histogram" in query_lower:
+                intent["visualization"] = "histogram"
+            else:
+                # Default to bar chart for general chart requests
+                intent["visualization"] = "bar"
+        elif "bar" in query_lower or "column" in query_lower:
             intent["visualization"] = "bar"
         elif "line" in query_lower or "trend" in query_lower:
             intent["visualization"] = "line"
@@ -290,9 +313,25 @@ Always use 'df' to refer to the DataFrame.
             
             if chart_type == "bar":
                 if len(text_cols) > 0 and len(numeric_cols) > 0:
-                    # Bar chart: categorical vs numeric
-                    x_col = text_cols[0]
-                    y_col = numeric_cols[0]
+                    # Smart column selection based on query
+                    query_lower = query.lower()
+                    
+                    # Select x-axis column (categorical)
+                    x_col = text_cols[0]  # Default to first text column
+                    if "category" in query_lower:
+                        x_col = "Category" if "Category" in text_cols else text_cols[0]
+                    elif "date" in query_lower:
+                        x_col = "Date" if "Date" in text_cols else text_cols[0]
+                    
+                    # Select y-axis column (numeric)
+                    if "revenue" in query_lower:
+                        y_col = "Revenue" if "Revenue" in numeric_cols else numeric_cols[0]
+                    elif "users" in query_lower:
+                        y_col = "Users" if "Users" in numeric_cols else numeric_cols[0]
+                    elif "growth" in query_lower:
+                        y_col = "Growth_%" if "Growth_%" in numeric_cols else numeric_cols[0]
+                    else:
+                        y_col = numeric_cols[0]
                     
                     # Group by categorical column
                     grouped = df.groupby(x_col)[y_col].sum().reset_index()
@@ -373,11 +412,73 @@ Always use 'df' to refer to the DataFrame.
             else:
                 return {"error": f"Unknown chart type: {chart_type}"}
             
-            # Convert to JSON
-            chart_json = fig.to_json()
+            # Create clean chart data without binary encoding
+            chart_data = {
+                "data": [],
+                "layout": {
+                    "title": fig.layout.title.text if fig.layout.title else f"Chart for: {query}",
+                    "paper_bgcolor": 'rgba(0,0,0,0)',
+                    "plot_bgcolor": 'rgba(0,0,0,0)',
+                    "font": {"color": '#ffffff'},
+                    "xaxis": {
+                        "title": fig.layout.xaxis.title.text if fig.layout.xaxis.title else "",
+                        "color": '#ffffff',
+                        "gridcolor": '#404040',
+                        "linecolor": '#404040',
+                        "tickcolor": '#ffffff'
+                    },
+                    "yaxis": {
+                        "title": fig.layout.yaxis.title.text if fig.layout.yaxis.title else "",
+                        "color": '#ffffff',
+                        "gridcolor": '#404040',
+                        "linecolor": '#404040',
+                        "tickcolor": '#ffffff'
+                    },
+                    "legend": {
+                        "bgcolor": 'rgba(0,0,0,0)',
+                        "bordercolor": '#404040',
+                        "font": {"color": '#ffffff'}
+                    }
+                }
+            }
+            
+            # Extract data from the figure manually and ensure plain arrays
+            for trace in fig.data:
+                # Convert x and y data to plain Python lists
+                x_data = []
+                y_data = []
+                
+                if hasattr(trace, 'x') and trace.x is not None:
+                    if hasattr(trace.x, 'tolist'):
+                        x_data = trace.x.tolist()
+                    elif hasattr(trace.x, '__iter__'):
+                        x_data = list(trace.x)
+                    else:
+                        x_data = [trace.x]
+                
+                if hasattr(trace, 'y') and trace.y is not None:
+                    if hasattr(trace.y, 'tolist'):
+                        y_data = trace.y.tolist()
+                    elif hasattr(trace.y, '__iter__'):
+                        y_data = list(trace.y)
+                    else:
+                        y_data = [trace.y]
+                
+                clean_trace = {
+                    "type": trace.type,
+                    "x": x_data,
+                    "y": y_data,
+                    "name": trace.name if hasattr(trace, 'name') else "",
+                    "hovertemplate": trace.hovertemplate if hasattr(trace, 'hovertemplate') else "",
+                    "marker": {
+                        "color": trace.marker.color if hasattr(trace.marker, 'color') else "#636efa"
+                    }
+                }
+                chart_data["data"].append(clean_trace)
+            
             return {
                 "type": chart_type,
-                "data": json.loads(chart_json),
+                "data": chart_data,
                 "title": fig.layout.title.text if fig.layout.title else f"Chart for: {query}"
             }
             
@@ -402,7 +503,29 @@ Always use 'df' to refer to the DataFrame.
             try:
                 # Use invoke instead of run (newer method)
                 print(f"🚀 Invoking agent with query: {query[:200]}...")
-                response = agent.invoke({"input": query})
+                
+                # Add instructions to prevent chart creation
+                enhanced_query = f"""
+IMPORTANT: You are working with a DataFrame called 'df' that contains the following data:
+- Shape: {df.shape}
+- Columns: {list(df.columns)}
+- Sample data: {df.head().to_string()}
+
+The DataFrame 'df' is already loaded and available. Do NOT create a new DataFrame.
+Use the existing 'df' variable directly.
+
+Question: {query}
+
+CRITICAL INSTRUCTIONS:
+- DO NOT try to create charts, graphs, or visualizations
+- DO NOT use matplotlib, seaborn, plotly, or any plotting libraries
+- DO NOT use plt.show(), fig.show(), or any display functions
+- Just analyze the data and return insights as text
+- Use pandas operations only for data analysis
+- Return clean, concise answers without any plotting code
+"""
+                
+                response = agent.invoke({"input": enhanced_query})
                 print(f"🔍 Agent response type: {type(response)}")
                 print(f"🔍 Agent response: {response}")
                 

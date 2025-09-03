@@ -50,8 +50,15 @@ class AIProcessor:
             self.llm = OpenAI(model="gpt-3.5-turbo", temperature=0.1)
             self.langchain_llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.1)
         
-        # Initialize embeddings
-        self.embeddings = OpenAIEmbedding()
+        # Initialize embeddings - use HuggingFace to avoid API key issues
+        try:
+            from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+            self.embeddings = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            print("✅ Using HuggingFace embeddings (no API key required)")
+        except ImportError:
+            # Fallback if HuggingFace not available
+            print("Warning: HuggingFace embeddings not available, skipping embeddings")
+            self.embeddings = None
         
         # Service context for LlamaIndex
         self.service_context = ServiceContext.from_defaults(
