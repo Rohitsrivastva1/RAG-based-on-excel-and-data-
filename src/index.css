@@ -1,0 +1,151 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f5f5f5;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.upload-section {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.chat-section {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  min-height: 400px;
+}
+
+.visualization-section {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  min-height: 400px;
+}
+
+.chat-messages {
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background-color: #fafafa;
+}
+
+.message {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.message.user {
+  background-color: #e6f7ff;
+  border-left: 3px solid #1890ff;
+  margin-left: 20px;
+}
+
+.message.assistant {
+  background-color: #f6ffed;
+  border-left: 3px solid #52c41a;
+  margin-right: 20px;
+}
+
+.message.error {
+  background-color: #fff2f0;
+  border-left: 3px solid #ff4d4f;
+}
+
+.query-display {
+  background-color: #f5f5f5;
+  padding: 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  border: 1px solid #d9d9d9;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.ant-upload-dragger {
+  border: 2px dashed #d9d9d9 !important;
+  border-radius: 6px !important;
+}
+
+.ant-upload-dragger:hover {
+  border-color: #1890ff !important;
+}
+
+.connection-form {
+  max-width: 600px;
+}
+
+.visualization-container {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.no-data {
+  color: #999;
+  font-style: italic;
+}
+
+.export-buttons {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+}
+
+.session-info {
+  background-color: #f0f0f0;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.session-info strong {
+  color: #1890ff;
+}
