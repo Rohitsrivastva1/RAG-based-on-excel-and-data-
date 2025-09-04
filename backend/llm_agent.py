@@ -218,6 +218,84 @@ Only perform data analysis - no plotting or visualization.
                 print(f"❌ Fallback also failed: {e2}")
                 raise
     
+    def format_table_response(self, response_text: str, df: pd.DataFrame, query: str) -> str:
+        """Format table data for better display in the frontend"""
+        try:
+            # Check if this is a "top N rows" query
+            if "top" in query.lower() and ("row" in query.lower() or "record" in query.lower()):
+                # Extract number from query
+                import re
+                numbers = re.findall(r'\d+', query)
+                n = int(numbers[0]) if numbers else 5
+                
+                # Get top N rows
+                top_rows = df.head(n)
+                
+                # Format as a nice table
+                formatted_rows = []
+                for idx, row in top_rows.iterrows():
+                    row_data = []
+                    for col in df.columns:
+                        value = row[col]
+                        if isinstance(value, float):
+                            if col == 'Revenue':
+                                row_data.append(f"{col}: ${value:,.2f}")
+                            elif col == 'Growth_%':
+                                row_data.append(f"{col}: {value:.2f}%")
+                            else:
+                                row_data.append(f"{col}: {value:.2f}")
+                        else:
+                            row_data.append(f"{col}: {value}")
+                    formatted_rows.append(f"**Row {idx + 1}:** " + " | ".join(row_data))
+                
+                return f"Here are the top {n} rows from your data:\n\n" + "\n\n".join(formatted_rows)
+            
+            # Check if this is a "unique values" query
+            elif "unique" in query.lower() and "values" in query.lower():
+                # Find the column mentioned
+                for col in df.columns:
+                    if col.lower() in query.lower():
+                        unique_values = df[col].unique().tolist()
+                        if len(unique_values) <= 10:  # Only format if reasonable number
+                            formatted_values = []
+                            for i, value in enumerate(unique_values, 1):
+                                formatted_values.append(f"{i}. {value}")
+                            return f"Unique values in **{col}** column:\n\n" + "\n".join(formatted_values)
+                        else:
+                            return f"Found {len(unique_values)} unique values in **{col}** column: {', '.join(map(str, unique_values[:10]))}..."
+                return response_text
+            
+            # Check if response contains markdown table
+            elif "|" in response_text and "---" in response_text:
+                # Convert markdown table to formatted text
+                lines = response_text.split('\n')
+                formatted_lines = []
+                in_table = False
+                
+                for line in lines:
+                    if "|" in line and not line.strip().startswith('---'):
+                        if not in_table:
+                            formatted_lines.append("**Data Table:**")
+                            in_table = True
+                        
+                        # Clean up the line
+                        cells = [cell.strip() for cell in line.split('|') if cell.strip()]
+                        if cells:
+                            formatted_line = " | ".join(cells)
+                            formatted_lines.append(f"• {formatted_line}")
+                    elif not in_table:
+                        formatted_lines.append(line)
+                    elif line.strip() == "":
+                        formatted_lines.append("")
+                
+                return "\n".join(formatted_lines)
+            
+            return response_text
+            
+        except Exception as e:
+            print(f"⚠️ Error formatting table response: {e}")
+            return response_text
+
     def analyze_query_intent(self, query: str) -> Dict[str, Any]:
         """Analyze query intent to determine processing approach"""
         query_lower = query.lower()
@@ -590,6 +668,9 @@ CRITICAL INSTRUCTIONS:
                     response_text = response_text[1:-1]
                 if response_text.startswith('"') and response_text.endswith('"'):
                     response_text = response_text[1:-1]
+                
+                # Format table data better for display
+                response_text = self.format_table_response(response_text, df, query)
                 
                 print("Rohit",response_text)
                 # Try to parse JSON response for structured output

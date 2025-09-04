@@ -130,6 +130,116 @@ const ChatInterface = ({ sessionId }) => {
     setTypingMessage(null);
   };
 
+  const renderFormattedText = (text) => {
+    if (!text) return 'No answer provided';
+    
+    // First, replace \n with actual line breaks for proper rendering
+    const processedText = text.replace(/\\n/g, '\n');
+    
+    // Split by double newlines to create paragraphs
+    const paragraphs = processedText.split('\n\n');
+    
+    return paragraphs.map((paragraph, index) => {
+      // Check if this is a table-like structure
+      if (paragraph.includes('|') && paragraph.includes(':')) {
+        const lines = paragraph.split('\n');
+        return (
+          <div key={index} style={{ marginBottom: '12px' }}>
+            {lines.map((line, lineIndex) => {
+              if (line.includes('|')) {
+                const parts = line.split('|').map(part => part.trim()).filter(part => part);
+                return (
+                  <div key={lineIndex} style={{ 
+                    display: 'flex', 
+                    gap: '12px', 
+                    marginBottom: '6px',
+                    padding: '8px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                  }}>
+                    {parts.map((part, partIndex) => (
+                      <span key={partIndex} style={{ 
+                        flex: 1,
+                        fontSize: '14px',
+                        color: partIndex === 0 ? '#ffffff' : '#cccccc'
+                      }}>
+                        {part}
+                      </span>
+                    ))}
+                  </div>
+                );
+              } else if (line.startsWith('**') && line.endsWith('**')) {
+                return (
+                  <div key={lineIndex} style={{ 
+                    fontWeight: 'bold', 
+                    fontSize: '16px', 
+                    marginBottom: '8px',
+                    color: '#ffffff'
+                  }}>
+                    {line.replace(/\*\*/g, '')}
+                  </div>
+                );
+              } else if (line.startsWith('• ') || line.startsWith('- ')) {
+                return (
+                  <div key={lineIndex} style={{ 
+                    marginLeft: '16px', 
+                    marginBottom: '4px',
+                    fontSize: '14px'
+                  }}>
+                    {line}
+                  </div>
+                );
+              } else {
+                return (
+                  <div key={lineIndex} style={{ marginBottom: '4px' }}>
+                    {line}
+                  </div>
+                );
+              }
+            })}
+          </div>
+        );
+      }
+      
+      // Regular paragraph - handle single \n characters
+      return (
+        <div key={index} style={{ marginBottom: '12px' }}>
+          {paragraph.split('\n').map((line, lineIndex) => {
+            if (line.startsWith('**') && line.endsWith('**')) {
+              return (
+                <div key={lineIndex} style={{ 
+                  fontWeight: 'bold', 
+                  fontSize: '16px', 
+                  marginBottom: '8px',
+                  color: '#ffffff'
+                }}>
+                  {line.replace(/\*\*/g, '')}
+                </div>
+              );
+            } else if (line.startsWith('• ') || line.startsWith('- ')) {
+              return (
+                <div key={lineIndex} style={{ 
+                  marginLeft: '16px', 
+                  marginBottom: '4px',
+                  fontSize: '14px'
+                }}>
+                  {line}
+                </div>
+              );
+            } else {
+              return (
+                <div key={lineIndex} style={{ marginBottom: '4px' }}>
+                  {line}
+                </div>
+              );
+            }
+          })}
+        </div>
+      );
+    });
+  };
+
   const renderMessage = (msg) => {
     const isUser = msg.type === 'user';
     const isError = msg.type === 'error';
@@ -222,7 +332,7 @@ const ChatInterface = ({ sessionId }) => {
                       onComplete={handleTypingComplete}
                     />
                   ) : (
-                    msg.content.answer || 'No answer provided'
+                    renderFormattedText(msg.content.answer)
                   )}
                 </div>
                 
