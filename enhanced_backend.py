@@ -1,36 +1,39 @@
 """
-Enhanced RAG Analytics Backend with LLM-powered queries
-Integrates LlamaIndex, LangChain, FAISS, and dynamic visualizations
+Enhanced RAG Analytics Backend (Excel-only mode)
+FastAPI + pandas, with graceful stubs for vector index & DB
 """
 
 import os
-import pandas as pd
+import io
+import uuid
+import json
 import numpy as np
+import pandas as pd
+from datetime import datetime
+from typing import Dict, Any
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from typing import Dict, Any, Optional, List
-import json
-import uuid
-from datetime import datetime
-import io
 
-# Import our custom modules
-from backend.embeddings import embedding_manager
-from backend.llm_agent import llm_agent
-from backend.database_manager import db_manager
+# ---- Mode flags ------------------------------------------------------------
+LLM_ENABLED = False         # No LLM agent at the moment
+VECTOR_INDEX_ENABLED = False
+DATABASE_ENABLED = False
+
+# ---- Optional dependencies (disabled path) ---------------------------------
+llm_agent = None
+print("⚠️ Running in Excel-only mode: LLM/Vectors/DB are disabled.")
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# Initialize FastAPI app
+# ---- FastAPI app -----------------------------------------------------------
 app = FastAPI(
     title="Enhanced RAG Analytics API",
-    description="LLM-powered data analytics with RAG, LangChain, and dynamic visualizations",
+    description="Excel-only analytics (pandas). Vector index & DB routes are stubbed.",
     version="2.0.0"
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -39,90 +42,340 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage for sessions
-sessions = {}
+# ---- In-memory session store ----------------------------------------------
+sessions: Dict[str, Dict[str, Any]] = {}
 
+# ---- Safe JSON cleaner -----------------------------------------------------
+def clean_for_json(obj):
+    if isinstance(obj, dict):
+        return {k: clean_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [clean_for_json(i) for i in obj]
+    if isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    # Handle pandas NA/NaT
+    try:
+        # pd.isna on scalars; will raise on dict/list so it's in try
+        if pd.isna(obj):
+            return None
+    except Exception:
+        pass
+    return obj
+
+# ---- Graceful stubs for optional components --------------------------------
+class DisabledEmbeddingManager:
+    def build_index(self, *_, **__):
+        raise RuntimeError("Vector index is disabled in Excel-only mode.")
+    def get_session_info(self, *_):
+        return {"enabled": False, "document_count": 0, "embedding_model": None}
+    def clear_session(self, *_):
+        return None
+
+class DisabledDBManager:
+    def connect_postgresql(self, *_, **__): return False
+    def connect_mysql(self, *_, **__): return False
+    def get_schema_info(self, *_): return {"enabled": False, "tables": []}
+    def execute_query(self, *_): return {"error": "Database support is disabled."}
+    def get_sample_data(self, *_): return {"error": "Database support is disabled."}
+    def close_connection(self, *_): return None
+
+embedding_manager = DisabledEmbeddingManager()
+db_manager = DisabledDBManager()
+
+# ---- Health & sessions -----------------------------------------------------
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
     return {
         "status": "healthy",
-        "message": "Enhanced RAG Analytics API is running",
+        "message": "Enhanced RAG Analytics API is running (Excel-only mode)",
         "version": "2.0.0",
-        "features": [
-            "LLM-powered queries",
-            "FAISS vector indexing",
-            "LangChain agents",
-            "Dynamic visualizations",
-            "Database connections"
-        ]
+        "features": {
+            "excel_upload": True,
+            "excel_qna_pandas": True,
+            "llm_powered_queries": LLM_ENABLED,
+            "faiss_vector_index": VECTOR_INDEX_ENABLED,
+            "langchain_agents": LLM_ENABLED,
+            "database_connections": DATABASE_ENABLED
+        }
     }
 
 @app.get("/sessions")
 async def get_sessions():
-    """Get all active sessions"""
-    return {
-        "sessions": list(sessions.keys()),
-        "count": len(sessions)
-    }
+    return {"sessions": list(sessions.keys()), "count": len(sessions)}
 
+# ---- Upload Excel/CSV ------------------------------------------------------
 @app.post("/upload_excel")
 async def upload_excel(file: UploadFile = File(...), session_id: str = Form(None)):
-    """Upload Excel/CSV file and build vector index"""
     try:
-        # Generate session ID if not provided
         if not session_id:
             session_id = str(uuid.uuid4())
-        
-        # Read file content
+
         content = await file.read()
-        
-        # Determine file type and read with pandas
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(io.StringIO(content.decode('utf-8')))
-        elif file.filename.endswith(('.xlsx', '.xls')):
+
+        if file.filename.endswith(".csv"):
+            df = pd.read_csv(io.StringIO(content.decode("utf-8")))
+        elif file.filename.endswith((".xlsx", ".xls")):
             df = pd.read_excel(io.BytesIO(content))
         else:
-            raise HTTPException(status_code=400, detail="Unsupported file format")
-        
-        # Clean data
-        df = df.dropna(how='all')  # Remove completely empty rows
-        df = df.fillna('')  # Fill NaN values
-        
-        # Store session data
+            raise HTTPException(status_code=400, detail="Unsupported file format. Use CSV or Excel.")
+
+        # Clean up obvious issues
+        df = df.dropna(how="all").fillna("")
+
         sessions[session_id] = {
             "data": df,
             "file_name": file.filename,
             "upload_time": datetime.now().isoformat(),
             "data_source": "file"
         }
-        
-        # Build vector index
-        index_built = embedding_manager.build_index(df, session_id)
-        
-        # Get session info
-        session_info = embedding_manager.get_session_info(session_id)
-        
+
+        print(f"📊 Stored Excel data for session {session_id}")
+
         return {
             "success": True,
             "session_id": session_id,
             "file_info": {
                 "name": file.filename,
-                "rows": len(df),
-                "columns": len(df.columns),
-                "column_names": df.columns.tolist()
+                "rows": int(len(df)),
+                "columns": int(len(df.columns)),
+                "column_names": list(df.columns)
             },
-            "index_info": {
-                "built": index_built,
-                "document_count": session_info["document_count"],
-                "embedding_model": session_info["embedding_model"]
-            },
-            "data_preview": df.head(5).to_dict('records')
+            "data_preview": clean_for_json(df.head(5).to_dict("records"))
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
+# ---- Simple pandas Q&A -----------------------------------------------------
+def process_excel_question(question: str, df: pd.DataFrame, session_id: str) -> Dict[str, Any]:
+    try:
+        q = question.lower()
+        visualization = None
+
+        if "column" in q or "columns" in q:
+            answer = f"The dataset has {len(df.columns)} columns: {', '.join(map(str, df.columns.tolist()))}"
+            query_type = "pandas_agent"
+
+        elif "first" in q and ("row" in q or "5" in q):
+            n_rows = 5 if "5" in q else 3
+            preview = df.head(n_rows).to_string(index=False)
+            answer = f"First {n_rows} rows:\n{preview}"
+            query_type = "pandas_agent"
+
+        elif "total" in q and "revenue" in q:
+            if "Revenue" in df.columns:
+                if "category" in q and "Category" in df.columns:
+                    revenue_by_category = df.groupby("Category")["Revenue"].sum()
+                    answer = f"Total revenue by category:\n{revenue_by_category.to_string()}"
+                else:
+                    total_revenue = df["Revenue"].sum()
+                    answer = f"Total revenue: ${float(total_revenue):,.2f}"
+                query_type = "pandas_agent"
+            else:
+                answer = "No 'Revenue' column found in the dataset."
+                query_type = "pandas_agent"
+
+        elif "average" in q and "growth" in q:
+            if "Growth_%" in df.columns:
+                avg_growth = df["Growth_%"].astype(float).mean()
+                answer = f"Average growth percentage: {float(avg_growth):.2f}%"
+                query_type = "pandas_agent"
+            else:
+                answer = "No 'Growth_%' column found in the dataset."
+                query_type = "pandas_agent"
+
+        elif any(k in q for k in ["chart", "graph", "bar"]):
+            # Determine which column to use based on the query
+            print(f"🔍 Debug: Query = '{q}'")
+            print(f"🔍 Debug: Contains 'user' = {'user' in q}")
+            print(f"🔍 Debug: Contains 'users' = {'users' in q}")
+            print(f"🔍 Debug: Contains 'revenue' = {'revenue' in q}")
+            
+            if ("user" in q or "users" in q) and "Users" in df.columns and "Category" in df.columns:
+                # User requested users by category
+                print("🔍 Debug: Using Users column")
+                users_by_category = df.groupby("Category")["Users"].sum()
+                visualization = {
+                    "type": "bar",
+                    "data": {
+                        "x": users_by_category.index.tolist(),
+                        "y": [float(v) for v in users_by_category.values.tolist()],
+                        "title": "Users by Category"
+                    }
+                }
+                answer = f"Users by category:\n{users_by_category.to_string()}"
+                query_type = "pandas_agent"
+            elif "revenue" in q and "Revenue" in df.columns and "Category" in df.columns:
+                # User requested revenue by category
+                print("🔍 Debug: Using Revenue column")
+                revenue_by_category = df.groupby("Category")["Revenue"].sum()
+                visualization = {
+                    "type": "bar",
+                    "data": {
+                        "x": revenue_by_category.index.tolist(),
+                        "y": [float(v) for v in revenue_by_category.values.tolist()],
+                        "title": "Revenue by Category"
+                    }
+                }
+                answer = f"Revenue by category:\n{revenue_by_category.to_string()}"
+                query_type = "pandas_agent"
+            elif "Revenue" in df.columns and "Category" in df.columns:
+                # Default to revenue if no specific column mentioned
+                print("🔍 Debug: Using default Revenue column")
+                revenue_by_category = df.groupby("Category")["Revenue"].sum()
+                visualization = {
+                    "type": "bar",
+                    "data": {
+                        "x": revenue_by_category.index.tolist(),
+                        "y": [float(v) for v in revenue_by_category.values.tolist()],
+                        "title": "Revenue by Category"
+                    }
+                }
+                answer = f"Revenue by category:\n{revenue_by_category.to_string()}"
+                query_type = "pandas_agent"
+            else:
+                answer = "Cannot create chart - missing required columns (Category and either Revenue or Users)."
+                query_type = "pandas_agent"
+
+        elif "unique" in q:
+            # Heuristic: if they mention a column name, try to use it; else default to 'Category' if present
+            target_col = None
+            for col in df.columns:
+                if col.lower() in q:
+                    target_col = col
+                    break
+            if target_col is None and "Category" in df.columns:
+                target_col = "Category"
+
+            if target_col:
+                uniques = pd.Series(df[target_col].unique()).astype(str).tolist()
+                answer = f"Unique values in '{target_col}': {', '.join(uniques)}"
+                query_type = "pandas_agent"
+            else:
+                answer = "Please specify which column to get unique values from."
+                query_type = "pandas_agent"
+
+        elif "region" in q and "user" in q:
+            if "Region" in df.columns and "Users" in df.columns:
+                users_by_region = df.groupby("Region")["Users"].sum()
+                answer = f"Users by region:\n{users_by_region.to_string()}"
+                query_type = "pandas_agent"
+            else:
+                answer = "Cannot analyze users by region - missing required columns."
+                query_type = "pandas_agent"
+
+        elif "top" in q and "category" in q:
+            if "Revenue" in df.columns and "Category" in df.columns:
+                top_categories = df.groupby("Category")["Revenue"].sum().sort_values(ascending=False)
+                n = 3 if "3" in q else 5
+                top_n = top_categories.head(n)
+                answer = f"Top {n} categories by revenue:\n{top_n.to_string()}"
+                query_type = "pandas_agent"
+            else:
+                answer = "Cannot find top categories - missing required columns."
+                query_type = "pandas_agent"
+
+        else:
+            answer = (
+                "Dataset summary:\n"
+                f"- Rows: {len(df)}\n"
+                f"- Columns: {len(df.columns)}\n"
+                f"- Column names: {', '.join(map(str, df.columns.tolist()))}"
+            )
+            query_type = "pandas_agent"
+
+        result = {
+            "question": question,
+            "answer": answer,
+            "query_type": query_type,
+            "data": {
+                "summary": {
+                    "rows": int(len(df)),
+                    "columns": int(len(df.columns)),
+                    "column_names": list(map(str, df.columns.tolist()))
+                },
+                "context": f"Excel file analysis for session {session_id}"
+            }
+        }
+        if visualization:
+            result["visualization"] = visualization
+
+        return clean_for_json(result)
+
+    except Exception as e:
+        return {
+            "question": question,
+            "answer": f"Error processing Excel data: {str(e)}",
+            "query_type": "pandas_agent",
+            "data": {"summary": {}, "context": "Error in Excel data processing"}
+        }
+
+@app.post("/ask_question")
+async def ask_question(question: str = Form(...), session_id: str = Form(...)):
+    """Process natural language question with Excel data (pandas-only)."""
+    try:
+        if session_id not in sessions:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        session = sessions[session_id]
+        if session.get("data_source") != "file":
+            raise HTTPException(status_code=400, detail="This session is not for file data")
+
+        df = session["data"]
+        result = process_excel_question(question, df, session_id)
+
+        # Uniform response envelope
+        return {
+            "question": question,
+            "answer": result.get("answer", "No answer generated"),
+            "query_type": result.get("query_type", "pandas_agent"),
+            "data": result.get("data", {}),
+            "visualization": result.get("visualization", None),
+            "session_id": session_id,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+
+# ---- Session info / cleanup ------------------------------------------------
+@app.get("/session/{session_id}/info")
+async def get_session_info(session_id: str):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = sessions[session_id]
+    index_info = embedding_manager.get_session_info(session_id) if VECTOR_INDEX_ENABLED else {
+        "enabled": False, "document_count": 0, "embedding_model": None
+    }
+
+    return {
+        "session_id": session_id,
+        "data_source": session["data_source"],
+        "index_info": index_info,
+        "session_data": {
+            **{k: v for k, v in session.items() if k != "data"},
+            "file_name": session.get("file_name"),
+            "upload_time": session.get("upload_time")
+        }
+    }
+
+@app.delete("/session/{session_id}")
+async def delete_session(session_id: str):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if VECTOR_INDEX_ENABLED:
+        embedding_manager.clear_session(session_id)
+    if DATABASE_ENABLED:
+        db_manager.close_connection(session_id)
+
+    del sessions[session_id]
+    return {"message": f"Session {session_id} deleted successfully"}
+
+# ---- DB routes (disabled) --------------------------------------------------
 @app.post("/connect_database")
 async def connect_database(
     db_type: str = Form(...),
@@ -133,221 +386,23 @@ async def connect_database(
     password: str = Form(...),
     session_id: str = Form(None)
 ):
-    """Connect to a database"""
-    try:
-        # Generate session ID if not provided
-        if not session_id:
-            session_id = str(uuid.uuid4())
-        
-        # Connect to database
-        success = False
-        if db_type.lower() == "postgresql":
-            success = db_manager.connect_postgresql(host, port, database, username, password, session_id)
-        elif db_type.lower() == "mysql":
-            success = db_manager.connect_mysql(host, port, database, username, password, session_id)
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported database type")
-        
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to connect to database")
-        
-        # Get schema information
-        schema_info = db_manager.get_schema_info(session_id)
-        
-        # Store session data
-        sessions[session_id] = {
-            "db_type": db_type,
-            "host": host,
-            "database": database,
-            "connection_time": datetime.now().isoformat(),
-            "data_source": "database",
-            "schema_info": schema_info
-        }
-        
-        return {
-            "success": True,
-            "session_id": session_id,
-            "connection_info": {
-                "type": db_type,
-                "host": host,
-                "database": database
-            },
-            "schema_info": schema_info
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error connecting to database: {str(e)}")
-
-@app.post("/ask_question")
-async def ask_question(
-    question: str = Form(...),
-    session_id: str = Form(...)
-):
-    """Process natural language question with LLM agent"""
-    try:
-        if session_id not in sessions:
-            raise HTTPException(status_code=404, detail="Session not found")
-        
-        session = sessions[session_id]
-        
-        # Get context from vector index
-        context = embedding_manager.get_context_for_query(session_id, question)
-        
-        if session["data_source"] == "file":
-            # Process with file data
-            df = session["data"]
-            try:
-                result = llm_agent.process_with_agent(df, question, context)
-            except RuntimeError as e:
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"LLM processing failed: {str(e)}"
-                )
-            
-        elif session["data_source"] == "database":
-            # Process with database
-            schema_info = session["schema_info"]
-            
-            # Generate SQL query
-            sql_query = db_manager.generate_sql_from_natural_language(question, schema_info)
-            
-            # Execute query
-            query_result = db_manager.execute_query(session_id, sql_query)
-            
-            if "error" in query_result:
-                result = {
-                    "answer": f"Database query error: {query_result['error']}",
-                    "query_type": "database_error",
-                    "visualization": None
-                }
-            else:
-                # Convert to DataFrame for visualization
-                df = query_result["data"]
-                
-                # Process with LLM agent
-                try:
-                    result = llm_agent.process_with_agent(df, question, context)
-                    result["sql_query"] = sql_query
-                    result["row_count"] = query_result["row_count"]
-                except RuntimeError as e:
-                    raise HTTPException(
-                        status_code=500, 
-                        detail=f"LLM processing failed: {str(e)}"
-                    )
-        
-        else:
-            raise HTTPException(status_code=400, detail="Unknown data source")
-        
-        # Clean data for JSON serialization
-        def clean_for_json(obj):
-            if isinstance(obj, dict):
-                return {k: clean_for_json(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [clean_for_json(item) for item in obj]
-            elif isinstance(obj, (np.integer, np.floating)):
-                return obj.item()
-            elif isinstance(obj, np.ndarray):
-                return obj.tolist()
-            elif pd.isna(obj):
-                return None
-            else:
-                return obj
-        
-        # Create response
-        response = {
-            "question": question,
-            "answer": result.get("answer", "No answer generated"),
-            "query_type": result.get("query_type", "unknown"),
-            "data": {
-                "summary": clean_for_json(result.get("data", {})),
-                "context": context
-            },
-            "visualization": clean_for_json(result.get("visualization", None)),
-            "session_id": session_id,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # Add database-specific fields
-        if session["data_source"] == "database":
-            response["sql_query"] = result.get("sql_query", "")
-            response["row_count"] = result.get("row_count", 0)
-        
-        return response
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
-
-@app.get("/session/{session_id}/info")
-async def get_session_info(session_id: str):
-    """Get detailed session information"""
-    if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = sessions[session_id]
-    index_info = embedding_manager.get_session_info(session_id)
-    
-    return {
-        "session_id": session_id,
-        "data_source": session["data_source"],
-        "index_info": index_info,
-        "session_data": session
-    }
-
-@app.delete("/session/{session_id}")
-async def delete_session(session_id: str):
-    """Delete a session and clean up resources"""
-    if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    # Clean up resources
-    embedding_manager.clear_session(session_id)
-    db_manager.close_connection(session_id)
-    
-    # Remove session
-    del sessions[session_id]
-    
-    return {"message": f"Session {session_id} deleted successfully"}
+    raise HTTPException(status_code=501, detail="Database support is disabled in Excel-only mode.")
 
 @app.get("/database/{session_id}/tables")
 async def get_database_tables(session_id: str):
-    """Get list of tables in connected database"""
-    if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = sessions[session_id]
-    if session["data_source"] != "database":
-        raise HTTPException(status_code=400, detail="Session is not connected to a database")
-    
-    schema_info = db_manager.get_schema_info(session_id)
-    return schema_info
+    raise HTTPException(status_code=501, detail="Database support is disabled in Excel-only mode.")
 
 @app.get("/database/{session_id}/table/{table_name}")
 async def get_table_data(session_id: str, table_name: str, limit: int = 10):
-    """Get sample data from a specific table"""
-    if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    result = db_manager.get_sample_data(session_id, table_name, limit)
-    return result
+    raise HTTPException(status_code=501, detail="Database support is disabled in Excel-only mode.")
 
+# ---- Main ------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Enhanced RAG Analytics Backend")
+    print("🚀 Starting Enhanced RAG Analytics Backend (Excel-only)")
     print("=" * 50)
-    print("Features:")
-    print("✅ LLM-powered queries with LangChain")
-    print("✅ FAISS vector indexing with LlamaIndex")
-    print("✅ Dynamic database connections")
-    print("✅ Intelligent visualizations")
-    print("✅ RAG-based context retrieval")
+    print("✅ Excel/CSV upload & pandas Q&A")
+    print("⛔ LLM, FAISS, DB: disabled in this build")
     print("=" * 50)
-    print("⚠️  REQUIRES API KEY:")
-    print("   Set GOOGLE_API_KEY or OPENAI_API_KEY environment variable")
-    print("   Get Gemini API key: https://makersuite.google.com/app/apikey")
-    print("   Get OpenAI API key: https://platform.openai.com/account/api-keys")
-    print("=" * 50)
-    print("Backend will be available at: http://localhost:8000")
-    print("API docs will be available at: http://localhost:8000/docs")
-    print("Press Ctrl+C to stop the server")
-    
+    print("Docs: http://localhost:8000/docs")
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)

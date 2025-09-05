@@ -72,13 +72,71 @@ const Visualization = ({ sessionId }) => {
         ? JSON.parse(vizData.config) 
         : vizData.config;
 
+      // Convert our custom format to Plotly format
+      let plotlyData = [];
+      let plotlyLayout = {};
+
+      if (config.type === 'bar' && config.data) {
+        plotlyData = [{
+          x: config.data.x || [],
+          y: config.data.y || [],
+          type: 'bar',
+          marker: {
+            color: '#00d4aa',
+            line: {
+              color: '#00a8ff',
+              width: 1
+            }
+          },
+          name: config.data.title || 'Data'
+        }];
+
+        plotlyLayout = {
+          title: {
+            text: config.data.title || 'Chart',
+            font: { color: '#ffffff', size: 16 }
+          },
+          xaxis: {
+            title: 'Category',
+            color: '#ffffff',
+            gridcolor: '#404040',
+            linecolor: '#404040',
+            tickcolor: '#ffffff'
+          },
+          yaxis: {
+            title: 'Value',
+            color: '#ffffff',
+            gridcolor: '#404040',
+            linecolor: '#404040',
+            tickcolor: '#ffffff'
+          },
+          autosize: true,
+          margin: { l: 60, r: 50, t: 60, b: 60 },
+          showlegend: false,
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          font: {
+            color: '#ffffff',
+            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif'
+          }
+        };
+      } else if (config.data && config.data.data) {
+        // Handle nested data format
+        plotlyData = config.data.data || [];
+        plotlyLayout = config.data.layout || {};
+      } else {
+        // Fallback to original format
+        plotlyData = config.data || [];
+        plotlyLayout = config.layout || {};
+      }
+
       return (
         <Plot
-          data={config.data || []}
+          data={plotlyData}
           layout={{
-            ...config.layout,
+            ...plotlyLayout,
             autosize: true,
-            margin: { l: 50, r: 50, t: 50, b: 50 },
+            margin: { l: 60, r: 50, t: 60, b: 60 },
             showlegend: true,
             // Dark theme for Plotly
             paper_bgcolor: 'rgba(0,0,0,0)',
@@ -88,12 +146,14 @@ const Visualization = ({ sessionId }) => {
               family: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif'
             },
             xaxis: {
+              ...plotlyLayout.xaxis,
               color: '#ffffff',
               gridcolor: '#404040',
               linecolor: '#404040',
               tickcolor: '#ffffff'
             },
             yaxis: {
+              ...plotlyLayout.yaxis,
               color: '#ffffff',
               gridcolor: '#404040',
               linecolor: '#404040',
