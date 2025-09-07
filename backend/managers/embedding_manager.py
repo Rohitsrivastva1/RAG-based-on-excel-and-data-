@@ -30,10 +30,23 @@ try:
     from llama_index.core.base.embeddings.base import BaseEmbedding
     from llama_index.vector_stores.faiss import FaissVectorStore
     from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    from llama_index.core.readers import SimpleDirectoryReader
     LLAMAINDEX_AVAILABLE = True
 except ImportError as e:
     LLAMAINDEX_AVAILABLE = False
     logger.warning(f"LlamaIndex not available ({e}). Embedding features will be disabled.")
+
+# Document processing imports
+try:
+    import fitz  # PyMuPDF
+    import docx
+    import markdown
+    from bs4 import BeautifulSoup
+    import requests
+    DOCUMENT_PROCESSING_AVAILABLE = True
+except ImportError as e:
+    DOCUMENT_PROCESSING_AVAILABLE = False
+    logger.warning(f"Document processing libraries not available ({e}). Document features will be disabled.")
 
 try:
     import faiss
@@ -486,6 +499,257 @@ class EmbeddingManager:
                 logger.info(f"Removed index files for session {session_id}")
         except Exception as e:
             logger.error(f"Failed to remove index files for session {session_id}: {e}")
+    
+    def process_pdf(self, file_path: str, session_id: str) -> List[Document]:
+        """Process PDF file and create documents."""
+        if not DOCUMENT_PROCESSING_AVAILABLE:
+            raise RuntimeError("Document processing libraries not available")
+        
+        try:
+            logger.info(f"Processing PDF file: {file_path}")
+            documents = []
+            
+            # Open PDF with PyMuPDF
+            pdf_doc = fitz.open(file_path)
+            
+            for page_num in range(pdf_doc.page_count):
+                page = pdf_doc[page_num]
+                text = page.get_text()
+                
+                if text.strip():  # Only add non-empty pages
+                    doc = Document(
+                        text=text,
+                        metadata={
+                            "type": "pdf_page",
+                            "session_id": session_id,
+                            "page_number": page_num + 1,
+                            "file_path": file_path,
+                            "total_pages": pdf_doc.page_count
+                        }
+                    )
+                    documents.append(doc)
+            
+            pdf_doc.close()
+            logger.info(f"Processed PDF: {len(documents)} pages from {file_path}")
+            return documents
+            
+        except Exception as e:
+            logger.error(f"Failed to process PDF {file_path}: {e}")
+            raise
+    
+    def process_docx(self, file_path: str, session_id: str) -> List[Document]:
+        """Process DOCX file and create documents."""
+        if not DOCUMENT_PROCESSING_AVAILABLE:
+            raise RuntimeError("Document processing libraries not available")
+        
+        try:
+            logger.info(f"Processing DOCX file: {file_path}")
+            documents = []
+            
+            # Open DOCX with python-docx
+            doc = docx.Document(file_path)
+            
+            # Extract text from paragraphs
+            full_text = []
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    full_text.append(paragraph.text.strip())
+            
+            # Split into chunks (e.g., every 500 words)
+            chunk_size = 500
+            text = " ".join(full_text)
+            words = text.split()
+            
+            for i in range(0, len(words), chunk_size):
+                chunk_words = words[i:i + chunk_size]
+                chunk_text = " ".join(chunk_words)
+                
+                doc_obj = Document(
+                    text=chunk_text,
+                    metadata={
+                        "type": "docx_chunk",
+                        "session_id": session_id,
+                        "chunk_index": i // chunk_size + 1,
+                        "file_path": file_path,
+                        "word_count": len(chunk_words)
+                    }
+                )
+                documents.append(doc_obj)
+            
+            logger.info(f"Processed DOCX: {len(documents)} chunks from {file_path}")
+            return documents
+            
+        except Exception as e:
+            logger.error(f"Failed to process DOCX {file_path}: {e}")
+            raise
+    
+    def process_markdown(self, file_path: str, session_id: str) -> List[Document]:
+        """Process Markdown file and create documents."""
+        if not DOCUMENT_PROCESSING_AVAILABLE:
+            raise RuntimeError("Document processing libraries not available")
+        
+        try:
+            logger.info(f"Processing Markdown file: {file_path}")
+            documents = []
+            
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Convert markdown to HTML then extract text
+            html = markdown.markdown(content)
+            soup = BeautifulSoup(html, 'html.parser')
+            text = soup.get_text()
+            
+            # Split into chunks (e.g., every 300 words)
+            chunk_size = 300
+            words = text.split()
+            
+            for i in range(0, len(words), chunk_size):
+                chunk_words = words[i:i + chunk_size]
+                chunk_text = " ".join(chunk_words)
+                
+                doc = Document(
+                    text=chunk_text,
+                    metadata={
+                        "type": "markdown_chunk",
+                        "session_id": session_id,
+                        "chunk_index": i // chunk_size + 1,
+                        "file_path": file_path,
+                        "word_count": len(chunk_words)
+                    }
+                )
+                documents.append(doc)
+            
+            logger.info(f"Processed Markdown: {len(documents)} chunks from {file_path}")
+            return documents
+            
+        except Exception as e:
+            logger.error(f"Failed to process Markdown {file_path}: {e}")
+            raise
+    
+    def process_website(self, url: str, session_id: str) -> List[Document]:
+        """Process website URL and create documents."""
+        if not DOCUMENT_PROCESSING_AVAILABLE:
+            raise RuntimeError("Document processing libraries not available")
+        
+        try:
+            logger.info(f"Processing website: {url}")
+            documents = []
+            
+            # Fetch webpage content
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            
+            # Parse HTML content
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Remove script and style elements
+            for script in soup(["script", "style"]):
+                script.decompose()
+            
+            # Extract text
+            text = soup.get_text()
+            
+            # Clean up text
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = ' '.join(chunk for chunk in chunks if chunk)
+            
+            # Split into chunks (e.g., every 400 words)
+            chunk_size = 400
+            words = text.split()
+            
+            for i in range(0, len(words), chunk_size):
+                chunk_words = words[i:i + chunk_size]
+                chunk_text = " ".join(chunk_words)
+                
+                doc = Document(
+                    text=chunk_text,
+                    metadata={
+                        "type": "website_chunk",
+                        "session_id": session_id,
+                        "chunk_index": i // chunk_size + 1,
+                        "url": url,
+                        "word_count": len(chunk_words)
+                    }
+                )
+                documents.append(doc)
+            
+            logger.info(f"Processed website: {len(documents)} chunks from {url}")
+            return documents
+            
+        except Exception as e:
+            logger.error(f"Failed to process website {url}: {e}")
+            raise
+    
+    def add_documents_to_index(self, documents: List[Document], session_id: str) -> bool:
+        """Add documents to the existing index for a session."""
+        if not LLAMAINDEX_AVAILABLE or not self.embeddings:
+            logger.warning("Embeddings not available. Document indexing skipped.")
+            return False
+        
+        try:
+            # Convert to LlamaIndex documents
+            llama_docs = []
+            for doc in documents:
+                llama_doc = LlamaDocument(
+                    text=doc.text,
+                    metadata=doc.metadata
+                )
+                llama_docs.append(llama_doc)
+            
+            if session_id in self.indices:
+                # Add to existing index
+                index = self.indices[session_id]
+                for llama_doc in llama_docs:
+                    index.insert(llama_doc)
+                logger.info(f"Added {len(documents)} documents to existing index for session {session_id}")
+            else:
+                # Create new index
+                if not FAISS_AVAILABLE:
+                    logger.warning("FAISS not available. Using simple storage.")
+                    return self._add_documents_simple(documents, session_id)
+                
+                # Create FAISS vector store
+                faiss_index = faiss.IndexFlatL2(settings.faiss_dim)
+                vector_store = FaissVectorStore(faiss_index=faiss_index)
+                storage_context = StorageContext.from_defaults(vector_store=vector_store)
+                
+                # Build index
+                index = VectorStoreIndex.from_documents(
+                    llama_docs,
+                    storage_context=storage_context,
+                    embed_model=self.embeddings
+                )
+                
+                # Store index and vector store
+                self.indices[session_id] = index
+                self.vector_stores[session_id] = vector_store
+                
+                logger.info(f"Created new index with {len(documents)} documents for session {session_id}")
+            
+            # Save index to disk
+            self._save_index(session_id, self.indices[session_id], self.vector_stores[session_id])
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to add documents to index for session {session_id}: {e}")
+            return False
+    
+    def _add_documents_simple(self, documents: List[Document], session_id: str) -> bool:
+        """Add documents using simple storage (no FAISS)."""
+        try:
+            if session_id not in self.documents:
+                self.documents[session_id] = []
+            
+            self.documents[session_id].extend(documents)
+            logger.info(f"Added {len(documents)} documents to simple storage for session {session_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to add documents to simple storage for session {session_id}: {e}")
+            return False
 
 
 # Global embedding manager instance

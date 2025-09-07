@@ -63,6 +63,8 @@ const ChatInterface = ({ sessionId, onVisualizationCreated, messages = [], onMes
           visualization: result.visualization,
           sql_query: result.sql_query,
           row_count: result.row_count,
+          source_quotes: result.source_quotes || [],
+          document_type: result.document_type,
           timestamp: result.timestamp
         },
         timestamp: new Date().toISOString()
@@ -137,7 +139,51 @@ const ChatInterface = ({ sessionId, onVisualizationCreated, messages = [], onMes
     setTypingMessage(null);
   };
 
-  const renderFormattedText = (text) => {
+  const handleChartTypeChange = (messageId, newChartType) => {
+    // Find the message and update its visualization type
+    const updatedMessages = messages.map(msg => {
+      if (msg.id === messageId && msg.content.visualization) {
+        const updatedMsg = {
+          ...msg,
+          content: {
+            ...msg.content,
+            visualization: {
+              ...msg.content.visualization,
+              type: newChartType
+            }
+          }
+        };
+        
+        // Update localStorage for visualization component
+        const vizData = {
+          config: updatedMsg.content.visualization,
+          chart_type: newChartType,
+          query_id: Date.now(),
+          timestamp: new Date().toISOString()
+        };
+        localStorage.setItem(`viz_${sessionId}`, JSON.stringify(vizData));
+        
+        // Trigger storage event for Visualization component
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: `viz_${sessionId}`,
+          newValue: JSON.stringify(vizData),
+          storageArea: localStorage
+        }));
+        
+        // Call the visualization callback
+        if (onVisualizationCreated) {
+          onVisualizationCreated(vizData);
+        }
+        
+        return updatedMsg;
+      }
+      return msg;
+    });
+    
+    onMessagesChange(updatedMessages);
+  };
+
+  const renderFormattedText = (text, sourceQuotes = []) => {
     if (!text) return 'No answer provided';
     
     // First, replace \n with actual line breaks for proper rendering
@@ -146,105 +192,145 @@ const ChatInterface = ({ sessionId, onVisualizationCreated, messages = [], onMes
     // Split by double newlines to create paragraphs
     const paragraphs = processedText.split('\n\n');
     
-    return paragraphs.map((paragraph, index) => {
-      // Check if this is a table-like structure
-      if (paragraph.includes('|') && paragraph.includes(':')) {
-        const lines = paragraph.split('\n');
-        return (
-          <div key={index} style={{ marginBottom: '12px' }}>
-            {lines.map((line, lineIndex) => {
-              if (line.includes('|')) {
-                const parts = line.split('|').map(part => part.trim()).filter(part => part);
-                return (
-                  <div key={lineIndex} style={{ 
-                    display: 'flex', 
-                    gap: '12px', 
-                    marginBottom: '6px',
-                    padding: '8px',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255, 255, 255, 0.1)'
-                  }}>
-                    {parts.map((part, partIndex) => (
-                      <span key={partIndex} style={{ 
-                        flex: 1,
-                        fontSize: '14px',
-                        color: partIndex === 0 ? '#ffffff' : '#cccccc'
+    return (
+      <div>
+        {paragraphs.map((paragraph, index) => {
+          // Check if this is a table-like structure
+          if (paragraph.includes('|') && paragraph.includes(':')) {
+            const lines = paragraph.split('\n');
+            return (
+              <div key={index} style={{ marginBottom: '12px' }}>
+                {lines.map((line, lineIndex) => {
+                  if (line.includes('|')) {
+                    const parts = line.split('|').map(part => part.trim()).filter(part => part);
+                    return (
+                      <div key={lineIndex} style={{ 
+                        display: 'flex', 
+                        gap: '12px', 
+                        marginBottom: '6px',
+                        padding: '8px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(255, 255, 255, 0.1)'
                       }}>
-                        {part}
-                      </span>
-                    ))}
-                  </div>
-                );
-              } else if (line.startsWith('**') && line.endsWith('**')) {
-                return (
-                  <div key={lineIndex} style={{ 
-                    fontWeight: 'bold', 
-                    fontSize: '16px', 
-                    marginBottom: '8px',
-                    color: '#ffffff'
-                  }}>
-                    {line.replace(/\*\*/g, '')}
-                  </div>
-                );
-              } else if (line.startsWith('• ') || line.startsWith('- ')) {
-                return (
-                  <div key={lineIndex} style={{ 
-                    marginLeft: '16px', 
-                    marginBottom: '4px',
-                    fontSize: '14px'
-                  }}>
-                    {line}
-                  </div>
-                );
-              } else {
-                return (
-                  <div key={lineIndex} style={{ marginBottom: '4px' }}>
-                    {line}
-                  </div>
-                );
-              }
-            })}
+                        {parts.map((part, partIndex) => (
+                          <span key={partIndex} style={{ 
+                            flex: 1,
+                            fontSize: '14px',
+                            color: partIndex === 0 ? '#ffffff' : '#cccccc'
+                          }}>
+                            {part}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  } else if (line.startsWith('**') && line.endsWith('**')) {
+                    return (
+                      <div key={lineIndex} style={{ 
+                        fontWeight: 'bold', 
+                        fontSize: '16px', 
+                        marginBottom: '8px',
+                        color: '#ffffff'
+                      }}>
+                        {line.replace(/\*\*/g, '')}
+                      </div>
+                    );
+                  } else if (line.startsWith('• ') || line.startsWith('- ')) {
+                    return (
+                      <div key={lineIndex} style={{ 
+                        marginLeft: '16px', 
+                        marginBottom: '4px',
+                        fontSize: '14px'
+                      }}>
+                        {line}
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={lineIndex} style={{ marginBottom: '4px' }}>
+                        {line}
+                      </div>
+                    );
+                  }
+                })}
+              </div>
+            );
+          }
+          
+          // Regular paragraph - handle single \n characters
+          return (
+            <div key={index} style={{ marginBottom: '12px' }}>
+              {paragraph.split('\n').map((line, lineIndex) => {
+                if (line.startsWith('**') && line.endsWith('**')) {
+                  return (
+                    <div key={lineIndex} style={{ 
+                      fontWeight: 'bold', 
+                      fontSize: '16px', 
+                      marginBottom: '8px',
+                      color: '#ffffff'
+                    }}>
+                      {line.replace(/\*\*/g, '')}
+                    </div>
+                  );
+                } else if (line.startsWith('• ') || line.startsWith('- ')) {
+                  return (
+                    <div key={lineIndex} style={{ 
+                      marginLeft: '16px', 
+                      marginBottom: '4px',
+                      fontSize: '14px'
+                    }}>
+                      {line}
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div key={lineIndex} style={{ marginBottom: '4px' }}>
+                      {line}
+                    </div>
+                  );
+                }
+              })}
+            </div>
+          );
+        })}
+        
+        {/* Source Quotes Section */}
+        {sourceQuotes && sourceQuotes.length > 0 && (
+          <div style={{
+            marginTop: '16px',
+            padding: '12px',
+            background: 'rgba(0, 212, 170, 0.1)',
+            borderRadius: '8px',
+            border: '1px solid rgba(0, 212, 170, 0.3)'
+          }}>
+            <div style={{
+              fontSize: '13px',
+              fontWeight: 'bold',
+              color: '#00d4aa',
+              marginBottom: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              📚 Source Quotes
+            </div>
+            {sourceQuotes.map((quote, index) => (
+              <div key={index} style={{
+                fontSize: '12px',
+                color: '#ffffff',
+                marginBottom: '6px',
+                padding: '6px 8px',
+                background: 'rgba(0, 0, 0, 0.2)',
+                borderRadius: '4px',
+                borderLeft: '3px solid #00d4aa'
+              }}>
+                "{quote}"
+              </div>
+            ))}
           </div>
-        );
-      }
-      
-      // Regular paragraph - handle single \n characters
-      return (
-        <div key={index} style={{ marginBottom: '12px' }}>
-          {paragraph.split('\n').map((line, lineIndex) => {
-            if (line.startsWith('**') && line.endsWith('**')) {
-              return (
-                <div key={lineIndex} style={{ 
-                  fontWeight: 'bold', 
-                  fontSize: '16px', 
-                  marginBottom: '8px',
-                  color: '#ffffff'
-                }}>
-                  {line.replace(/\*\*/g, '')}
-                </div>
-              );
-            } else if (line.startsWith('• ') || line.startsWith('- ')) {
-              return (
-                <div key={lineIndex} style={{ 
-                  marginLeft: '16px', 
-                  marginBottom: '4px',
-                  fontSize: '14px'
-                }}>
-                  {line}
-                </div>
-              );
-            } else {
-              return (
-                <div key={lineIndex} style={{ marginBottom: '4px' }}>
-                  {line}
-                </div>
-              );
-            }
-          })}
-        </div>
-      );
-    });
+        )}
+      </div>
+    );
   };
 
   const renderMessage = (msg) => {
@@ -330,7 +416,14 @@ const ChatInterface = ({ sessionId, onVisualizationCreated, messages = [], onMes
                 <div style={{ 
                   marginBottom: '12px',
                   fontSize: '15px',
-                  lineHeight: '1.6'
+                  lineHeight: '1.6',
+                  // Special styling for document answers
+                  ...(msg.content.document_type && {
+                    background: 'rgba(0, 212, 170, 0.05)',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(0, 212, 170, 0.2)'
+                  })
                 }}>
                   {isTyping ? (
                     <TypingAnimation 
@@ -339,7 +432,7 @@ const ChatInterface = ({ sessionId, onVisualizationCreated, messages = [], onMes
                       onComplete={handleTypingComplete}
                     />
                   ) : (
-                    renderFormattedText(msg.content.answer)
+                    renderFormattedText(msg.content.answer, msg.content.source_quotes)
                   )}
                 </div>
                 
@@ -367,9 +460,9 @@ const ChatInterface = ({ sessionId, onVisualizationCreated, messages = [], onMes
                   </Tooltip>
                 </div>
                 
-                {/* Query Type Badge */}
-                {msg.content.query_type && (
-                  <div style={{ marginBottom: '12px' }}>
+                {/* Query Type and Document Type Badges */}
+                <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {msg.content.query_type && (
                     <Tag 
                       color="blue" 
                       style={{ 
@@ -381,6 +474,59 @@ const ChatInterface = ({ sessionId, onVisualizationCreated, messages = [], onMes
                     >
                       {msg.content.query_type}
                     </Tag>
+                  )}
+                  {msg.content.document_type && (
+                    <Tag 
+                      color="green" 
+                      style={{ 
+                        background: 'rgba(0, 212, 170, 0.2)',
+                        border: '1px solid rgba(0, 212, 170, 0.3)',
+                        color: '#ffffff',
+                        borderRadius: '8px'
+                      }}
+                    >
+                      📄 {msg.content.document_type.toUpperCase()}
+                    </Tag>
+                  )}
+                </div>
+
+                {/* Graph Switching Chips */}
+                {msg.content.visualization && msg.content.visualization.data && (
+                  <div style={{ marginBottom: '12px' }}>
+                    <div style={{
+                      fontSize: '13px',
+                      color: '#8c8c8c',
+                      marginBottom: '8px',
+                      fontWeight: '500'
+                    }}>
+                      Switch Chart Type:
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {['bar', 'pie', 'line', 'scatter'].map((chartType) => (
+                        <Button
+                          key={chartType}
+                          size="small"
+                          type={msg.content.visualization.type === chartType ? 'primary' : 'default'}
+                          onClick={() => handleChartTypeChange(msg.id, chartType)}
+                          style={{
+                            borderRadius: '16px',
+                            fontSize: '11px',
+                            height: '28px',
+                            padding: '0 12px',
+                            background: msg.content.visualization.type === chartType 
+                              ? 'linear-gradient(135deg, #00d4aa 0%, #00a8ff 100%)'
+                              : 'rgba(255, 255, 255, 0.1)',
+                            border: msg.content.visualization.type === chartType 
+                              ? 'none'
+                              : '1px solid rgba(255, 255, 255, 0.2)',
+                            color: '#ffffff',
+                            textTransform: 'capitalize'
+                          }}
+                        >
+                          {chartType}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 )}
                 

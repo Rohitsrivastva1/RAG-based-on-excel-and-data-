@@ -24,7 +24,9 @@ try:
     from .utils.types import (
         UploadResponse, AskResponse, HealthResponse, ErrorResponse,
         FileInfo, DataPreview, DataSummary, QueryData, VisualizationData,
-        DataSource, QueryType, IndexStatus
+        DataSource, QueryType, IndexStatus, DocumentType,
+        DocumentUploadResponse, DocumentInfo, DocumentPreview,
+        DocumentUploadRequest, URLUploadRequest
     )
     from .utils.serializer import clean_for_json, create_query_response, custom_json_encoder
     from .utils.security import sanitize_input
@@ -34,6 +36,7 @@ try:
     from .managers.embedding_manager import initialize_embedding_manager, get_embedding_manager
     from .managers.database_manager import initialize_database_manager, get_database_manager
     from .agents.llm_agent import initialize_llm_agent, get_llm_agent
+    from .agents.document_agent import initialize_document_agent, get_document_agent
     from .agents.ai_processor import initialize_ai_processor, get_ai_processor
     from .viz.visualization import initialize_visualization_engine, get_visualization_engine
 except ImportError:
@@ -43,7 +46,9 @@ except ImportError:
     from utils.types import (
         UploadResponse, AskResponse, HealthResponse, ErrorResponse,
         FileInfo, DataPreview, DataSummary, QueryData, VisualizationData,
-        DataSource, QueryType, IndexStatus
+        DataSource, QueryType, IndexStatus, DocumentType,
+        DocumentUploadResponse, DocumentInfo, DocumentPreview,
+        DocumentUploadRequest, URLUploadRequest
     )
     from utils.serializer import clean_for_json, create_query_response, custom_json_encoder
     from utils.security import sanitize_input
@@ -53,6 +58,7 @@ except ImportError:
     from managers.embedding_manager import initialize_embedding_manager, get_embedding_manager
     from managers.database_manager import initialize_database_manager, get_database_manager
     from agents.llm_agent import initialize_llm_agent, get_llm_agent
+    from agents.document_agent import initialize_document_agent, get_document_agent
     from agents.ai_processor import initialize_ai_processor, get_ai_processor
     from viz.visualization import initialize_visualization_engine, get_visualization_engine
 
@@ -117,6 +123,9 @@ async def lifespan(app: FastAPI):
         llm_agent = initialize_llm_agent()
         if not llm_agent.is_available():
             raise RuntimeError("LLM agent initialization failed. LlamaIndex and LangChain are required.")
+        
+        # Initialize document agent
+        document_agent = initialize_document_agent()
         
         # Initialize AI processor
         ai_processor = initialize_ai_processor()
@@ -349,6 +358,220 @@ async def build_index_background(session_id: str, df: pd.DataFrame):
         logger.error(f"Background index building error: {e}")
 
 
+# Upload document endpoint
+@app.post("/upload_document", response_model=DocumentUploadResponse)
+async def upload_document(
+    file: UploadFile = File(...),
+    session_id: Optional[str] = Form(None),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """Upload document (PDF, DOCX, MD) and build vector index."""
+    print(f"\n📄 UPLOAD DOCUMENT ENDPOINT")
+    print(f"   Filename: {file.filename}")
+    print(f"   Content type: {file.content_type}")
+    print(f"   Session ID provided: {session_id}")
+    
+    try:
+        with LogContext():
+            # Validate file
+            if not file.filename:
+                print(f"   ❌ No file provided")
+                raise HTTPException(status_code=400, detail="No file provided")
+            
+            # Check file type
+            file_extension = file.filename.lower().split('.')[-1]
+            if file_extension not in ['pdf', 'docx', 'md']:
+                print(f"   ❌ Unsupported file type: {file_extension}")
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Unsupported file type. Only PDF, DOCX, and MD files are supported."
+                )
+            
+            print(f"   ✅ File type supported: {file_extension}")
+            
+            # Check file size
+            content = await file.read()
+            file_size_mb = len(content) / (1024 * 1024)
+            print(f"   📏 File size: {file_size_mb:.2f} MB")
+            
+            if not validate_file_size(len(content), settings.max_file_size_mb):
+                print(f"   ❌ File too large: {file_size_mb:.2f} MB > {settings.max_file_size_mb} MB")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File too large. Maximum size: {settings.max_file_size_mb}MB"
+                )
+            
+            print(f"   ✅ File size validation passed")
+            
+            # Generate session ID if not provided
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                print(f"   🆔 Generated new session ID: {session_id}")
+            else:
+                print(f"   🆔 Using provided session ID: {session_id}")
+            
+            # Save file temporarily
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as tmp_file:
+                tmp_file.write(content)
+                tmp_file_path = tmp_file.name
+            
+            try:
+                # Process document based on type
+                embedding_manager = get_embedding_manager()
+                documents = []
+                
+                if file_extension == 'pdf':
+                    documents = embedding_manager.process_pdf(tmp_file_path, session_id)
+                elif file_extension == 'docx':
+                    documents = embedding_manager.process_docx(tmp_file_path, session_id)
+                elif file_extension == 'md':
+                    documents = embedding_manager.process_markdown(tmp_file_path, session_id)
+                
+                print(f"   📄 Processed {len(documents)} document chunks")
+                
+                # Add documents to index
+                index_success = embedding_manager.add_documents_to_index(documents, session_id)
+                
+                # Store session
+                session_store = get_session_store()
+                session_store.create(
+                    session_id=session_id,
+                    data=None,  # No DataFrame for documents
+                    data_source=DataSource.DOCUMENT.value,
+                    metadata={
+                        "file_name": file.filename,
+                        "file_size": len(content),
+                        "file_type": file_extension,
+                        "document_count": len(documents),
+                        "upload_time": datetime.utcnow().isoformat()
+                    }
+                )
+                
+                # Create document info
+                document_info = DocumentInfo(
+                    name=file.filename,
+                    type=DocumentType(file_extension),
+                    size_bytes=len(content),
+                    word_count=sum(doc.metadata.get('word_count', 0) for doc in documents),
+                    pages=documents[0].metadata.get('total_pages') if documents and 'total_pages' in documents[0].metadata else None
+                )
+                
+                # Create document preview
+                preview_chunks = [doc.text[:200] + "..." if len(doc.text) > 200 else doc.text for doc in documents[:5]]
+                document_preview = DocumentPreview(
+                    chunks=preview_chunks,
+                    total_chunks=len(documents)
+                )
+                
+                # Determine index status
+                index_status = IndexStatus.COMPLETED if index_success else IndexStatus.FAILED
+                
+                return DocumentUploadResponse(
+                    success=True,
+                    session_id=session_id,
+                    document_info=document_info,
+                    document_preview=document_preview,
+                    index_status=index_status,
+                    message="Document uploaded and indexed successfully"
+                )
+                
+            finally:
+                # Clean up temporary file
+                os.unlink(tmp_file_path)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Document upload failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Document upload failed: {str(e)}")
+
+
+# Upload URL endpoint
+@app.post("/upload_url", response_model=DocumentUploadResponse)
+async def upload_url(
+    url: str = Form(...),
+    session_id: Optional[str] = Form(None),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """Upload website URL and build vector index."""
+    print(f"\n🌐 UPLOAD URL ENDPOINT")
+    print(f"   URL: {url}")
+    print(f"   Session ID provided: {session_id}")
+    
+    try:
+        with LogContext():
+            # Validate URL
+            if not url.startswith(('http://', 'https://')):
+                print(f"   ❌ Invalid URL format")
+                raise HTTPException(status_code=400, detail="Invalid URL format. Must start with http:// or https://")
+            
+            print(f"   ✅ URL format valid")
+            
+            # Generate session ID if not provided
+            if not session_id:
+                session_id = str(uuid.uuid4())
+                print(f"   🆔 Generated new session ID: {session_id}")
+            else:
+                print(f"   🆔 Using provided session ID: {session_id}")
+            
+            # Process website
+            embedding_manager = get_embedding_manager()
+            documents = embedding_manager.process_website(url, session_id)
+            
+            print(f"   🌐 Processed {len(documents)} website chunks")
+            
+            # Add documents to index
+            index_success = embedding_manager.add_documents_to_index(documents, session_id)
+            
+            # Store session
+            session_store = get_session_store()
+            session_store.create(
+                session_id=session_id,
+                data=None,  # No DataFrame for URLs
+                data_source=DataSource.URL.value,
+                metadata={
+                    "url": url,
+                    "document_count": len(documents),
+                    "upload_time": datetime.utcnow().isoformat()
+                }
+            )
+            
+            # Create document info
+            document_info = DocumentInfo(
+                name=f"Website: {url}",
+                type=DocumentType.URL,
+                url=url,
+                word_count=sum(doc.metadata.get('word_count', 0) for doc in documents)
+            )
+            
+            # Create document preview
+            preview_chunks = [doc.text[:200] + "..." if len(doc.text) > 200 else doc.text for doc in documents[:5]]
+            document_preview = DocumentPreview(
+                chunks=preview_chunks,
+                total_chunks=len(documents)
+            )
+            
+            # Determine index status
+            index_status = IndexStatus.COMPLETED if index_success else IndexStatus.FAILED
+            
+            return DocumentUploadResponse(
+                success=True,
+                session_id=session_id,
+                document_info=document_info,
+                document_preview=document_preview,
+                index_status=index_status,
+                message="Website processed and indexed successfully"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"URL upload failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"URL upload failed: {str(e)}")
+
+
 # Ask question endpoint
 @app.post("/ask_question", response_model=AskResponse)
 async def ask_question(
@@ -393,6 +616,11 @@ async def ask_question(
             elif session_data.data_source == DataSource.DATABASE.value:
                 print(f"🗄️ Processing DATABASE data source")
                 result = await process_database_question(question, session_id)
+                
+            elif session_data.data_source in [DataSource.DOCUMENT.value, DataSource.URL.value]:
+                print(f"📄 Processing DOCUMENT/URL data source")
+                result = await process_document_question(question, session_id, session_data)
+                
             else:
                 print(f"   ❌ Unknown data source: {session_data.data_source}")
                 raise HTTPException(status_code=400, detail="Unknown data source")
@@ -461,7 +689,7 @@ async def process_file_question(
             
             print(f"   ✅ LLM agent available, processing...")
             logger.info(f"Using LLM agent for question: {question}")
-            agent_result = llm_agent.process_with_agent(df, question, context)
+            agent_result = llm_agent.process_with_agent(df, question, context, session_id)
             
             print(f"   Agent result received:")
             print(f"   - Success: {agent_result['success']}")
@@ -537,6 +765,126 @@ async def process_database_question(question: str, session_id: str) -> AskRespon
     except Exception as e:
         logger.error(f"Database question processing failed: {e}")
         raise
+
+async def process_document_question(
+    question: str,
+    session_id: str,
+    session_data
+) -> AskResponse:
+    """Process question for document/URL data."""
+    print(f"\n📄 PROCESSING DOCUMENT QUESTION")
+    print(f"   Question: '{question}'")
+    print(f"   Session ID: {session_id}")
+    print(f"   Data source: {session_data.data_source}")
+    print(f"   Metadata: {session_data.metadata}")
+    
+    try:
+        start_time = datetime.utcnow()
+        print(f"   Start time: {start_time}")
+        
+        # Get relevant context from vector store
+        print(f"🔍 Getting context from vector store...")
+        context = ""
+        embedding_manager = get_embedding_manager()
+        
+        if embedding_manager:
+            docs = embedding_manager.query_index(session_id, question, settings.top_k)
+            print(f"   Retrieved {len(docs) if docs else 0} documents from vector store")
+            
+            if docs:
+                context_parts = []
+                for doc in docs:
+                    context_parts.append(doc['text'])
+                context = "\n".join(context_parts)
+                print(f"   Context length: {len(context)} characters")
+                print(f"   Context preview: {context[:200]}...")
+            else:
+                print(f"   No relevant documents found in vector store")
+        else:
+            print(f"   Embedding manager not available")
+        
+        # Process with Document agent
+        print(f"📄 Processing with Document agent...")
+        try:
+            document_agent = get_document_agent()
+            if not document_agent.is_available():
+                print(f"   ❌ Document agent not available")
+                raise HTTPException(
+                    status_code=503, 
+                    detail="Document agent not available. LangChain and Google API key are required for document processing."
+                )
+            
+            print(f"   ✅ Document agent available, processing...")
+            logger.info(f"Using document agent for question: {question}")
+            
+            # Determine document type from session metadata
+            document_type = session_data.metadata.get('file_type', 'document')
+            if session_data.data_source == DataSource.URL.value:
+                document_type = 'url'
+            
+            agent_result = document_agent.process_document_question(
+                question=question,
+                context=context,
+                document_type=document_type,
+                session_id=session_id
+            )
+            
+            print(f"   Agent result received:")
+            print(f"   - Success: {agent_result['success']}")
+            print(f"   - Query type: {agent_result['query_type']}")
+            print(f"   - Answer type: {type(agent_result['answer'])}")
+            print(f"   - Answer preview: {str(agent_result['answer'])[:200]}...")
+            
+            if not agent_result['success']:
+                print(f"   ❌ Agent processing failed")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"LLM agent processing failed: {agent_result.get('error', 'Unknown error')}"
+                )
+            
+            if agent_result['success']:
+                duration = (datetime.utcnow() - start_time).total_seconds()
+                print(f"   ⏱️ Total processing duration: {duration:.2f} seconds")
+                
+                # Get document info from session metadata
+                document_count = session_data.metadata.get('document_count', 0)
+                file_name = session_data.metadata.get('file_name', 'Unknown')
+                url = session_data.metadata.get('url', '')
+                
+                return AskResponse(
+                    question=question,
+                    answer=agent_result['answer'],
+                    query_type=agent_result['query_type'],
+                    data=QueryData(
+                        summary=DataSummary(
+                            rows=document_count,
+                            columns=1,  # Documents don't have columns like DataFrames
+                            column_names=['content'],
+                            data_types={'content': 'text'}
+                        ),
+                        context=context,
+                        generated_code=agent_result.get('generated_code'),
+                        row_count=document_count
+                    ),
+                    visualization=agent_result.get('visualization'),
+                    session_id=session_id,
+                    timestamp=datetime.utcnow(),
+                    duration_ms=duration * 1000
+                )
+                
+        except Exception as e:
+            print(f"   ❌ LLM agent processing failed: {e}")
+            logger.error(f"LLM agent processing failed for document question: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Document processing failed: {str(e)}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Document question processing failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Document processing failed: {str(e)}")
 
 
 # REMOVED: Simple processing function - LLM agent is now mandatory

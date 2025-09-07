@@ -2,6 +2,7 @@ import React from 'react';
 import { Menu } from 'antd';
 import { 
   FileExcelOutlined, 
+  FileTextOutlined,
   DatabaseOutlined, 
   QuestionCircleOutlined, 
   BarChartOutlined, 
@@ -14,6 +15,11 @@ const TopNavigation = ({ activeTab, onTabChange }) => {
       key: 'upload',
       icon: <FileExcelOutlined />,
       label: 'Upload Data',
+    },
+    {
+      key: 'documents',
+      icon: <FileTextOutlined />,
+      label: 'Documents',
     },
     {
       key: 'database',

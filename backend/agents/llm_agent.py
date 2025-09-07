@@ -156,7 +156,8 @@ class LLMAgent:
         self,
         df: pd.DataFrame,
         question: str,
-        context: str = ""
+        context: str = "",
+        session_id: str = None
     ) -> Dict[str, Any]:
         """
         Process query with LLM agent.
@@ -165,6 +166,7 @@ class LLMAgent:
             df: DataFrame to analyze
             question: User question
             context: Additional context
+            session_id: Session ID for vector store queries
             
         Returns:
             Agent result dictionary
@@ -173,10 +175,37 @@ class LLMAgent:
         print(f"📊 Input DataFrame shape: {df.shape}")
         print(f"❓ Original question: '{question}'")
         print(f"📝 Context: '{context}'")
+        print(f"🆔 Session ID: {session_id}")
         
         if not self.agent:
             print("❌ ERROR: LLM agent not available")
             raise RuntimeError("LLM agent not available. Agent creation failed.")
+        
+        # Query vector store for additional context if session_id is provided
+        vector_context = ""
+        if session_id:
+            try:
+                from ..managers.embedding_manager import get_embedding_manager
+                embedding_manager = get_embedding_manager()
+                vector_docs = embedding_manager.query_index(session_id, question, top_k=3)
+                
+                if vector_docs:
+                    vector_context_parts = []
+                    for doc in vector_docs:
+                        vector_context_parts.append(doc['text'])
+                    vector_context = "\n".join(vector_context_parts)
+                    print(f"🔍 Retrieved {len(vector_docs)} relevant documents from vector store")
+                    print(f"📄 Vector context length: {len(vector_context)} characters")
+                else:
+                    print(f"⚠️ No relevant documents found in vector store")
+            except Exception as e:
+                print(f"⚠️ Failed to query vector store: {e}")
+                vector_context = ""
+        
+        # Combine all context
+        combined_context = context
+        if vector_context:
+            combined_context = f"{context}\n\nRelevant documents:\n{vector_context}" if context else f"Relevant documents:\n{vector_context}"
         
         try:
             start_time = datetime.utcnow()
@@ -203,7 +232,7 @@ class LLMAgent:
             
             # Prepare enhanced question with context
             print(f"📝 Enhancing question with data context...")
-            enhanced_question = self._enhance_question(question, context, df)
+            enhanced_question = self._enhance_question(question, combined_context, df)
             print(f"📝 Enhanced question length: {len(enhanced_question)} characters")
             print(f"📝 Enhanced question preview: {enhanced_question[:200]}...")
             print(f"enhanced question: {enhanced_question}")

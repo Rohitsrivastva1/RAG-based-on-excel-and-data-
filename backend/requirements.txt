@@ -9,6 +9,14 @@ numpy==1.24.3
 openpyxl==3.1.2
 xlrd==2.0.1
 
+# Document processing
+pymupdf==1.23.5           # PDF processing
+python-docx==0.8.11       # DOCX processing
+markdown==3.5.1           # Markdown parsing
+beautifulsoup4==4.12.2    # HTML extraction
+requests==2.31.0          # Website loading
+lxml==4.9.3               # XML/HTML parsing
+
 # Configuration and validation
 pydantic==2.5.0
 pydantic-settings==2.1.0

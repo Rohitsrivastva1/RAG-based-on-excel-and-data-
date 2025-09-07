@@ -3,6 +3,7 @@ import { Layout, Menu, Card, Row, Col, Button, Dropdown, Space, Typography, Badg
 import { 
   DatabaseOutlined, 
   FileExcelOutlined, 
+  FileTextOutlined,
   BarChartOutlined, 
   QuestionCircleOutlined,
   UserOutlined,
@@ -17,6 +18,7 @@ import {
   MoonOutlined
 } from '@ant-design/icons';
 import FileUpload from './components/FileUpload';
+import DocumentUpload from './components/DocumentUpload';
 import DatabaseConnection from './components/DatabaseConnection';
 import ChatInterface from './components/ChatInterface';
 import Visualization from './components/Visualization';
@@ -31,7 +33,7 @@ const { Title, Text } = Typography;
 function App() {
   const [currentSession, setCurrentSession] = useState(null);
   const [sessions, setSessions] = useState([]);
-  const [activeTab, setActiveTab] = useState('upload');
+  const [activeTab, setActiveTab] = useState('documents');
   const [collapsed, setCollapsed] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [pinnedInsights, setPinnedInsights] = useState([]);
@@ -179,6 +181,26 @@ function App() {
             className="main-card"
           >
             <FileUpload onSessionCreated={handleSessionCreated} />
+          </Card>
+        );
+      
+      case 'documents':
+        return (
+          <Card 
+            title={
+              <Space>
+                <FileTextOutlined style={{ color: '#00d4aa' }} />
+                <span>Upload Documents</span>
+              </Space>
+            }
+            extra={
+              <Button type="text" icon={<SettingOutlined />}>
+                Settings
+              </Button>
+            }
+            className="main-card"
+          >
+            <DocumentUpload onSessionCreated={handleSessionCreated} />
           </Card>
         );
       

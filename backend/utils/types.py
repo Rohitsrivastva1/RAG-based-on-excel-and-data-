@@ -13,6 +13,8 @@ class DataSource(str, Enum):
     """Enum for data source types."""
     FILE = "file"
     DATABASE = "database"
+    DOCUMENT = "document"
+    URL = "url"
 
 
 class QueryType(str, Enum):
@@ -40,6 +42,14 @@ class IndexStatus(str, Enum):
     BUILDING = "building"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class DocumentType(str, Enum):
+    """Enum for document types."""
+    PDF = "pdf"
+    DOCX = "docx"
+    MARKDOWN = "markdown"
+    URL = "url"
 
 
 # Request Models
@@ -93,6 +103,32 @@ class DatabaseConnectionRequest(BaseModel):
         }
 
 
+class DocumentUploadRequest(BaseModel):
+    """Request model for document upload."""
+    session_id: Optional[str] = Field(None, description="Optional session ID")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "session_id": "optional-session-id"
+            }
+        }
+
+
+class URLUploadRequest(BaseModel):
+    """Request model for URL upload."""
+    url: str = Field(..., description="Website URL to process")
+    session_id: Optional[str] = Field(None, description="Optional session ID")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "url": "https://example.com/article",
+                "session_id": "optional-session-id"
+            }
+        }
+
+
 # Response Models
 class FileInfo(BaseModel):
     """File information model."""
@@ -114,6 +150,27 @@ class FileInfo(BaseModel):
         }
 
 
+class DocumentInfo(BaseModel):
+    """Document information model."""
+    name: str = Field(..., description="Document name")
+    type: DocumentType = Field(..., description="Document type")
+    pages: Optional[int] = Field(None, description="Number of pages (for PDF)")
+    word_count: Optional[int] = Field(None, description="Word count")
+    size_bytes: Optional[int] = Field(None, description="File size in bytes")
+    url: Optional[str] = Field(None, description="URL (for web documents)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "research_paper.pdf",
+                "type": "pdf",
+                "pages": 25,
+                "word_count": 5000,
+                "size_bytes": 1024000
+            }
+        }
+
+
 class DataPreview(BaseModel):
     """Data preview model."""
     rows: List[Dict[str, Any]] = Field(..., description="Preview rows")
@@ -127,6 +184,23 @@ class DataPreview(BaseModel):
                     {"Date": "2023-01-02", "Category": "Entertainment", "Revenue": 1500}
                 ],
                 "total_rows": 1000
+            }
+        }
+
+
+class DocumentPreview(BaseModel):
+    """Document preview model."""
+    chunks: List[str] = Field(..., description="Document text chunks")
+    total_chunks: int = Field(..., ge=0, description="Total number of chunks")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "chunks": [
+                    "This is the first paragraph of the document...",
+                    "This is the second paragraph with more content..."
+                ],
+                "total_chunks": 10
             }
         }
 
@@ -157,6 +231,37 @@ class UploadResponse(BaseModel):
                 },
                 "index_status": "completed",
                 "message": "File uploaded successfully"
+            }
+        }
+
+
+class DocumentUploadResponse(BaseModel):
+    """Response model for document upload."""
+    success: bool = Field(..., description="Upload success status")
+    session_id: str = Field(..., description="Session ID")
+    document_info: DocumentInfo = Field(..., description="Document information")
+    document_preview: DocumentPreview = Field(..., description="Document preview")
+    index_status: IndexStatus = Field(..., description="Index building status")
+    message: Optional[str] = Field(None, description="Additional message")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "session_id": "session-123",
+                "document_info": {
+                    "name": "research_paper.pdf",
+                    "type": "pdf",
+                    "pages": 25,
+                    "word_count": 5000,
+                    "size_bytes": 1024000
+                },
+                "document_preview": {
+                    "chunks": ["This is the first paragraph...", "This is the second paragraph..."],
+                    "total_chunks": 10
+                },
+                "index_status": "completed",
+                "message": "Document uploaded successfully"
             }
         }
 

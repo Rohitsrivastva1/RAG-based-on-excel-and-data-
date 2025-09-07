@@ -20,6 +20,7 @@ const Visualization = ({ sessionId, visualizations = [], onPinInsight, compact =
   const [currentViz, setCurrentViz] = useState(null);
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState([]);
+  const [availableChartTypes, setAvailableChartTypes] = useState(['bar', 'pie', 'line', 'scatter']);
 
   useEffect(() => {
     // Use propCurrentViz if available, otherwise listen for localStorage changes
@@ -149,6 +150,30 @@ const Visualization = ({ sessionId, visualizations = [], onPinInsight, compact =
     }
   };
 
+  const handleChartTypeChange = (newChartType) => {
+    if (!currentViz) return;
+    
+    const updatedViz = {
+      ...currentViz,
+      type: newChartType,
+      chart_type: newChartType
+    };
+    
+    setCurrentViz(updatedViz);
+    
+    // Update localStorage
+    localStorage.setItem(`viz_${sessionId}`, JSON.stringify(updatedViz));
+    
+    // Trigger storage event for other components
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: `viz_${sessionId}`,
+      newValue: JSON.stringify(updatedViz),
+      storageArea: localStorage
+    }));
+    
+    message.success(`Switched to ${newChartType} chart`);
+  };
+
   const renderVisualization = (vizData, isCompact = false) => {
     console.log('Rendering visualization:', vizData, 'isCompact:', isCompact);
     
@@ -275,6 +300,104 @@ const Visualization = ({ sessionId, visualizations = [], onPinInsight, compact =
             family: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif'
           }
         };
+      } else if (config.type === 'line' && config.data) {
+        // Handle line chart data structure
+        plotlyData = [{
+          x: config.data.x || [],
+          y: config.data.y || [],
+          type: 'scatter',
+          mode: 'lines+markers',
+          line: {
+            color: '#00d4aa',
+            width: 3
+          },
+          marker: {
+            color: '#00a8ff',
+            size: 8,
+            line: {
+              color: '#ffffff',
+              width: 2
+            }
+          },
+          name: config.data.title || 'Data'
+        }];
+
+        plotlyLayout = {
+          title: {
+            text: config.data.title || 'Line Chart',
+            font: { color: '#ffffff', size: 16 }
+          },
+          xaxis: {
+            title: 'X Axis',
+            color: '#ffffff',
+            gridcolor: '#404040',
+            linecolor: '#404040',
+            tickcolor: '#ffffff'
+          },
+          yaxis: {
+            title: 'Y Axis',
+            color: '#ffffff',
+            gridcolor: '#404040',
+            linecolor: '#404040',
+            tickcolor: '#ffffff'
+          },
+          autosize: true,
+          margin: { l: 60, r: 50, t: 60, b: 60 },
+          showlegend: false,
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          font: {
+            color: '#ffffff',
+            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif'
+          }
+        };
+      } else if (config.type === 'scatter' && config.data) {
+        // Handle scatter plot data structure
+        plotlyData = [{
+          x: config.data.x || [],
+          y: config.data.y || [],
+          type: 'scatter',
+          mode: 'markers',
+          marker: {
+            color: '#00d4aa',
+            size: 12,
+            line: {
+              color: '#ffffff',
+              width: 2
+            }
+          },
+          name: config.data.title || 'Data'
+        }];
+
+        plotlyLayout = {
+          title: {
+            text: config.data.title || 'Scatter Plot',
+            font: { color: '#ffffff', size: 16 }
+          },
+          xaxis: {
+            title: 'X Axis',
+            color: '#ffffff',
+            gridcolor: '#404040',
+            linecolor: '#404040',
+            tickcolor: '#ffffff'
+          },
+          yaxis: {
+            title: 'Y Axis',
+            color: '#ffffff',
+            gridcolor: '#404040',
+            linecolor: '#404040',
+            tickcolor: '#ffffff'
+          },
+          autosize: true,
+          margin: { l: 60, r: 50, t: 60, b: 60 },
+          showlegend: false,
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          font: {
+            color: '#ffffff',
+            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif'
+          }
+        };
       } else if (config.data && config.data.data) {
         // Handle nested data format
         plotlyData = config.data.data || [];
@@ -374,6 +497,37 @@ const Visualization = ({ sessionId, visualizations = [], onPinInsight, compact =
                 {currentViz.type?.toUpperCase() || 'CHART'}
               </Tag>
             </div>
+            
+            {/* Compact Chart Type Switching */}
+            <div style={{ marginBottom: '8px' }}>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {availableChartTypes.map((chartType) => (
+                  <Button
+                    key={chartType}
+                    size="small"
+                    type={currentViz.type === chartType ? 'primary' : 'default'}
+                    onClick={() => handleChartTypeChange(chartType)}
+                    style={{
+                      borderRadius: '12px',
+                      fontSize: '10px',
+                      height: '24px',
+                      padding: '0 8px',
+                      background: currentViz.type === chartType 
+                        ? 'linear-gradient(135deg, #00d4aa 0%, #00a8ff 100%)'
+                        : 'rgba(255, 255, 255, 0.1)',
+                      border: currentViz.type === chartType 
+                        ? 'none'
+                        : '1px solid rgba(255, 255, 255, 0.2)',
+                      color: '#ffffff',
+                      textTransform: 'capitalize'
+                    }}
+                  >
+                    {chartType}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            
             <div style={{ height: '200px', width: '100%', position: 'relative', background: '#1a1a1a', borderRadius: '4px' }}>
               {renderVisualization(currentViz, true)}
             </div>
@@ -384,10 +538,6 @@ const Visualization = ({ sessionId, visualizations = [], onPinInsight, compact =
                 </Text>
               </div>
             )}
-            {/* Debug info */}
-            <div style={{ marginTop: '8px', fontSize: '10px', color: '#666' }}>
-              Debug: {currentViz.type || 'No type'} - {currentViz.data ? 'Has data' : 'No data'} - {currentViz.config ? 'Has config' : 'No config'}
-            </div>
           </div>
         ) : (
           <div style={{ 
@@ -460,6 +610,56 @@ const Visualization = ({ sessionId, visualizations = [], onPinInsight, compact =
             ))}
           </Row>
           <Divider style={{ margin: '24px 0' }} />
+        </div>
+      )}
+
+      {/* Chart Type Switching */}
+      {currentViz && (
+        <div style={{ 
+          marginBottom: '20px',
+          padding: '16px',
+          background: 'rgba(45, 45, 45, 0.5)',
+          borderRadius: '12px',
+          border: '1px solid #404040'
+        }}>
+          <div style={{
+            fontSize: '14px',
+            color: '#ffffff',
+            marginBottom: '12px',
+            fontWeight: '500',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            📊 Switch Chart Type:
+          </div>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            {availableChartTypes.map((chartType) => (
+              <Button
+                key={chartType}
+                size="small"
+                type={currentViz.type === chartType ? 'primary' : 'default'}
+                onClick={() => handleChartTypeChange(chartType)}
+                style={{
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  height: '32px',
+                  padding: '0 16px',
+                  background: currentViz.type === chartType 
+                    ? 'linear-gradient(135deg, #00d4aa 0%, #00a8ff 100%)'
+                    : 'rgba(255, 255, 255, 0.1)',
+                  border: currentViz.type === chartType 
+                    ? 'none'
+                    : '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#ffffff',
+                  textTransform: 'capitalize',
+                  fontWeight: '500'
+                }}
+              >
+                {chartType}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
 
