@@ -32,10 +32,13 @@ Transform raw data into actionable insights through:
 │ • Visualization (Chart Display)     │
 │ • SessionManager (Data Sessions)    │
 │ • DatabaseConnection (DB Setup)     │
+│ • Sidebar (Navigation & Insights)   │
+│ • TopNavigation (Tab Management)    │
+│ • TypingAnimation (UI Enhancement)  │
 └─────────────────────────────────────┘
 ```
 
-**Technologies**: React 18, Ant Design, Plotly.js, CSS3
+**Technologies**: React 18, Ant Design, Plotly.js, CSS3, React Router DOM
 
 ### 2. Backend Layer (FastAPI Application)
 ```
@@ -46,10 +49,13 @@ Transform raw data into actionable insights through:
 │ • Request/Response Handling         │
 │ • Session Management                │
 │ • Error Handling & Validation       │
+│ • Configuration Management          │
+│ • Logging & Monitoring              │
+│ • Background Task Processing        │
 └─────────────────────────────────────┘
 ```
 
-**Technologies**: FastAPI, Uvicorn, Pydantic, Python 3.9+
+**Technologies**: FastAPI, Uvicorn, Pydantic, Python 3.9+, SQLAlchemy
 
 ### 3. AI Processing Layer
 ```

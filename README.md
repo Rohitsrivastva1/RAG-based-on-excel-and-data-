@@ -12,10 +12,11 @@ A comprehensive data analytics platform that enables users to upload Excel/CSV f
 
 ## Architecture
 
-- **Frontend**: React with Ant Design, Plotly.js for visualizations
-- **Backend**: FastAPI with SQLAlchemy for database operations
-- **AI Layer**: LlamaIndex + LangChain for query generation
-- **Data Layer**: Pandas for Excel/CSV, SQLAlchemy for databases
+- **Frontend**: React 18 with Ant Design, Plotly.js for visualizations, modern dark theme UI
+- **Backend**: FastAPI with modular architecture, Pydantic for validation, comprehensive logging
+- **AI Layer**: LlamaIndex + LangChain for query generation, Google Gemini integration
+- **Data Layer**: Pandas for Excel/CSV processing, FAISS for vector storage
+- **Storage**: Redis for session management, HuggingFace for embeddings
 
 ## Quick Start
 
@@ -53,18 +54,22 @@ npm start
 
 ## API Endpoints
 
-- `POST /upload_excel` - Upload Excel/CSV files
-- `POST /connect_db` - Connect to database
-- `POST /ask_question` - Ask natural language questions
-- `GET /get_dashboard` - Get dashboard data
-- `GET /export/{format}` - Export results
+- `POST /upload_excel` - Upload Excel/CSV files with background indexing
+- `POST /ask_question` - Ask natural language questions with AI processing
+- `GET /sessions` - Get all active sessions
+- `GET /session/{id}/info` - Get detailed session information
+- `DELETE /session/{id}` - Delete session and cleanup resources
+- `GET /health` - Health check with component status
 
 ## Environment Variables
 
 See `.env.example` for required environment variables including:
-- Database connection strings
-- OpenAI/Anthropic API keys
-- Redis configuration (optional)
+- `GOOGLE_API_KEY` - Google Gemini API key (required)
+- `REDIS_URL` - Redis connection for session storage (optional)
+- `DATABASE_URL` - Database connection string (optional)
+- `EMBEDDING_MODEL` - HuggingFace embedding model (default: sentence-transformers/all-MiniLM-L6-v2)
+- `MAX_FILE_SIZE_MB` - Maximum file upload size (default: 50)
+- `MAX_ROWS_INDEXABLE` - Maximum rows for indexing (default: 10000)
 
 ## Security
 

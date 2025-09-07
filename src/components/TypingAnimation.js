@@ -33,7 +33,7 @@ const TypingAnimation = ({ text, speed = 30, onComplete }) => {
             height: '1.2em',
             backgroundColor: '#00d4aa',
             marginLeft: '2px',
-            animation: 'blink 1s infinite'
+            animation: 'blink 0.1s infinite'
           }}
         />
       )}

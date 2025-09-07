@@ -11,12 +11,16 @@ This document provides in-depth technical details about each component of the RA
 src/
 ├── App.js                    # Main application component
 ├── App.css                   # Global styles and dark theme
+├── index.js                  # Application entry point
+├── index.css                 # Global CSS styles
 ├── components/
 │   ├── ChatInterface.js      # Natural language chat interface
 │   ├── FileUpload.js         # Data file upload component
 │   ├── Visualization.js      # Chart display component
 │   ├── SessionManager.js     # Data session management
 │   ├── DatabaseConnection.js # Database connection setup
+│   ├── Sidebar.js            # Navigation sidebar
+│   ├── TopNavigation.js      # Top navigation tabs
 │   └── TypingAnimation.js    # ChatGPT-like typing effect
 └── package.json              # Dependencies and scripts
 ```
@@ -111,16 +115,35 @@ const [copiedStates, setCopiedStates] = useState({});
 ### FastAPI Application Structure
 ```
 backend/
-├── enhanced_backend.py       # Main FastAPI application
-├── llm_agent.py             # LLM processing and agent logic
-├── embeddings.py            # Vector store and embeddings
+├── app.py                   # Main FastAPI application
+├── settings.py              # Configuration management
+├── logging_config.py        # Logging setup
+├── agents/
+│   ├── llm_agent.py         # LLM processing and agent logic
+│   └── ai_processor.py      # AI intent analysis
+├── managers/
+│   ├── embedding_manager.py # Vector store and embeddings
+│   ├── session_store.py     # Session management
+│   └── database_manager.py  # Database connections
+├── utils/
+│   ├── types.py             # Pydantic models
+│   ├── security.py          # Security utilities
+│   └── serializer.py        # JSON serialization
+├── viz/
+│   └── visualization.py     # Plotly visualization engine
+├── tests/
+│   ├── conftest.py          # Test configuration
+│   └── test_*.py            # Test files
+├── cache/
+│   ├── huggingface/         # Model cache
+│   └── indices/             # FAISS indices
 ├── requirements.txt         # Python dependencies
 └── .env.example            # Environment configuration
 ```
 
 ### API Architecture
 
-#### 1. enhanced_backend.py - Main Application
+#### 1. app.py - Main Application
 ```python
 # Key Features:
 - FastAPI application setup
@@ -128,21 +151,27 @@ backend/
 - Route definitions
 - Error handling
 - Session management
+- Background task processing
+- Request ID middleware
+- Custom JSON response handling
 ```
 
 **Route Structure:**
 ```python
 @app.post("/upload_excel")
-async def upload_excel(file: UploadFile, session_id: str)
-
-@app.post("/connect_database")
-async def connect_database(connection_data: dict)
+async def upload_excel(file: UploadFile, session_id: str, background_tasks: BackgroundTasks)
 
 @app.post("/ask_question")
-async def ask_question(question_data: dict)
+async def ask_question(question: str, session_id: str)
 
 @app.get("/sessions")
 async def get_sessions()
+
+@app.get("/session/{session_id}/info")
+async def get_session_info(session_id: str)
+
+@app.delete("/session/{session_id}")
+async def delete_session(session_id: str)
 
 @app.get("/health")
 async def health_check()
