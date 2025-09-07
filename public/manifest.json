@@ -1,0 +1,11 @@
+{
+  "short_name": "RAG Analytics",
+  "name": "RAG Analytics - Data Visualization Platform",
+  "description": "AI-powered data analytics and visualization platform",
+  "icons": [],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#00d4aa",
+  "background_color": "#1a1a1a",
+  "orientation": "portrait-primary"
+}

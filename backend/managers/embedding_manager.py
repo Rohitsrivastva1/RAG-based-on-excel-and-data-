@@ -212,27 +212,37 @@ class EmbeddingManager:
                 llama_docs.append(llama_doc)
             
             # Create FAISS vector store
-            vector_store = FaissVectorStore(
-                faiss_index=faiss.IndexFlatL2(settings.faiss_dim),
-                dimension=settings.faiss_dim
-            )
+            print(f"🔧 Creating FAISS vector store with dimension: {settings.faiss_dim}")
+            faiss_index = faiss.IndexFlatL2(settings.faiss_dim)
+            print(f"   FAISS index created: {type(faiss_index)}")
+            
+            vector_store = FaissVectorStore(faiss_index=faiss_index)
+            print(f"   FAISS vector store created: {type(vector_store)}")
             
             # Create storage context
+            print(f"🔧 Creating storage context...")
             storage_context = StorageContext.from_defaults(vector_store=vector_store)
+            print(f"   Storage context created: {type(storage_context)}")
             
             # Build index
+            print(f"🔧 Building VectorStoreIndex with {len(llama_docs)} documents...")
             index = VectorStoreIndex.from_documents(
                 llama_docs,
                 storage_context=storage_context,
                 embed_model=self.embeddings
             )
+            print(f"   VectorStoreIndex created: {type(index)}")
             
             # Store index and vector store
+            print(f"🔧 Storing index and vector store for session {session_id}...")
             self.indices[session_id] = index
             self.vector_stores[session_id] = vector_store
+            print(f"   Index and vector store stored successfully")
             
             # Save index to disk
+            print(f"💾 Saving index to disk...")
             self._save_index(session_id, index, vector_store)
+            print(f"   Index saved to disk successfully")
             
             duration = (datetime.utcnow() - start_time).total_seconds()
             log_performance("build_index", duration * 1000, 
@@ -418,7 +428,12 @@ class EmbeddingManager:
             # Save FAISS index
             faiss_path = session_dir / "faiss_index.pkl"
             with open(faiss_path, 'wb') as f:
-                pickle.dump(vector_store.faiss_index, f)
+                # FaissVectorStore stores the index internally, we need to access it differently
+                if hasattr(vector_store, 'faiss_index'):
+                    pickle.dump(vector_store.faiss_index, f)
+                else:
+                    # Alternative: save the vector store itself
+                    pickle.dump(vector_store, f)
             
             # Save documents
             docs_path = session_dir / "documents.pkl"

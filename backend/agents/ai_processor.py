@@ -305,14 +305,9 @@ class LLMIntentAnalyzer:
             return None
         
         try:
-            if settings.openai_api_key:
-                return OpenAI(
-                    openai_api_key=settings.openai_api_key,
-                    temperature=0.1,
-                    max_tokens=500
-                )
-            elif settings.google_api_key:
-                return GooglePalm(
+            if settings.google_api_key:
+                return ChatGoogleGenerativeAI(
+                    model="gemini-pro",
                     google_api_key=settings.google_api_key,
                     temperature=0.1,
                     max_tokens=500
@@ -397,14 +392,9 @@ class CodeGenerator:
             return None
         
         try:
-            if settings.openai_api_key:
-                return OpenAI(
-                    openai_api_key=settings.openai_api_key,
-                    temperature=0.1,
-                    max_tokens=1000
-                )
-            elif settings.google_api_key:
-                return GooglePalm(
+            if settings.google_api_key:
+                return ChatGoogleGenerativeAI(
+                   model="gemini-1.5-flash",
                     google_api_key=settings.google_api_key,
                     temperature=0.1,
                     max_tokens=1000

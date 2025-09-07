@@ -6,8 +6,7 @@ import TypingAnimation from './TypingAnimation';
 const { TextArea } = Input;
 const { Title, Text } = Typography;
 
-const ChatInterface = ({ sessionId }) => {
-  const [messages, setMessages] = useState([]);
+const ChatInterface = ({ sessionId, onVisualizationCreated, messages = [], onMessagesChange }) => { 
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [typingMessage, setTypingMessage] = useState(null);
@@ -32,7 +31,8 @@ const ChatInterface = ({ sessionId }) => {
       timestamp: new Date().toISOString()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const newMessages = [...messages, userMessage];
+    onMessagesChange(newMessages);
     setInputValue('');
     setLoading(true);
 
@@ -70,7 +70,8 @@ const ChatInterface = ({ sessionId }) => {
 
       // Start typing animation
       setTypingMessage(assistantMessage);
-      setMessages(prev => [...prev, assistantMessage]);
+      const updatedMessages = [...messages, assistantMessage];
+      onMessagesChange(updatedMessages);
       
       // Store visualization data for Visualization component
       if (result.visualization && result.visualization.data) {
@@ -87,6 +88,11 @@ const ChatInterface = ({ sessionId }) => {
           newValue: JSON.stringify(vizData),
           storageArea: localStorage
         }));
+        
+        // Call the visualization callback
+        if (onVisualizationCreated) {
+          onVisualizationCreated(vizData);
+        }
       }
       
     } catch (error) {
@@ -99,7 +105,8 @@ const ChatInterface = ({ sessionId }) => {
         timestamp: new Date().toISOString()
       };
 
-      setMessages(prev => [...prev, errorMessage]);
+      const errorMessages = [...messages, errorMessage];
+      onMessagesChange(errorMessages);
       message.error('Failed to process question');
     } finally {
       setLoading(false);

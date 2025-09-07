@@ -143,8 +143,12 @@ def clean_for_json(obj: Any) -> Any:
         return float(obj)
     
     # Handle pandas NA/NaT
-    if pd.isna(obj):
-        return None
+    try:
+        if pd.isna(obj):
+            return None
+    except (ValueError, TypeError):
+        # Handle cases where pd.isna() fails (e.g., with arrays)
+        pass
     
     # Handle collections
     if isinstance(obj, dict):
@@ -152,6 +156,13 @@ def clean_for_json(obj: Any) -> Any:
     
     if isinstance(obj, (list, tuple)):
         return [clean_for_json(item) for item in obj]
+    
+    # Handle pandas arrays/series
+    if hasattr(obj, 'tolist'):
+        try:
+            return clean_for_json(obj.tolist())
+        except (ValueError, TypeError):
+            pass
     
     if isinstance(obj, set):
         return list(clean_for_json(item) for item in obj)

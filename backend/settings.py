@@ -4,7 +4,7 @@ Loads environment variables and provides type-safe configuration.
 """
 
 from pydantic_settings import BaseSettings
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, ConfigDict
 from typing import Optional, List, Union
 import os
 from dotenv import load_dotenv
@@ -69,10 +69,12 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in v.split(',')]
         return v
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"  # Allow extra fields but ignore them
+    )
         
     def get_llm_provider(self) -> str:
         """Determine which LLM provider to use based on available API keys."""

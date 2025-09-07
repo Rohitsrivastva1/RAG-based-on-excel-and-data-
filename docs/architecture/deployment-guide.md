@@ -111,25 +111,42 @@ nano .env.production
 **Production Environment Variables:**
 ```env
 # API Configuration
-GEMINI_API_KEY=your_production_gemini_api_key
-API_HOST=0.0.0.0
-API_PORT=8000
-API_WORKERS=4
+GOOGLE_API_KEY=your_production_google_api_key
+HOST=0.0.0.0
+PORT=8000
+DEBUG=false
+RELOAD=false
 
-# Database Configuration (if using)
+# Database Configuration (optional)
 DATABASE_URL=postgresql://user:password@localhost:5432/rag_analytics
+REDIS_URL=redis://localhost:6379
 
 # Security
-SECRET_KEY=your_secret_key_here
-CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+MAX_FILE_SIZE_MB=50
+EXECUTION_TIMEOUT_SECONDS=30
 
 # Logging
 LOG_LEVEL=INFO
-LOG_FILE=/var/log/rag-analytics/app.log
+LOG_FORMAT=json
 
-# File Upload
-MAX_FILE_SIZE=52428800  # 50MB
-UPLOAD_DIR=/opt/rag-analytics/uploads
+# Feature Flags
+ENABLE_LLM_AGENT=true
+ENABLE_EMBEDDINGS=true
+ENABLE_DATABASE=true
+ENABLE_VISUALIZATION=true
+ENABLE_BACKGROUND_INDEXING=true
+
+# Resource Limits
+MAX_ROWS_INDEXABLE=10000
+MAX_TOKENS_LLM=4000
+TOP_K=5
+MAX_CONTEXT_LENGTH=2000
+
+# Embedding Configuration
+EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+FAISS_DIM=384
+HUGGINGFACE_CACHE_DIR=/opt/rag-analytics/cache/huggingface
 ```
 
 ### 3. Systemd Service Configuration
@@ -152,7 +169,7 @@ Group=www-data
 WorkingDirectory=/opt/rag-analytics
 Environment=PATH=/opt/rag-analytics/venv/bin
 EnvironmentFile=/opt/rag-analytics/.env.production
-ExecStart=/opt/rag-analytics/venv/bin/uvicorn enhanced_backend:app --host 0.0.0.0 --port 8000 --workers 4
+ExecStart=/opt/rag-analytics/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=10
@@ -416,8 +433,17 @@ curl https://yourdomain.com/api/health
 # Expected response
 {
   "status": "healthy",
-  "message": "Enhanced RAG Analytics API is running",
-  "version": "2.0.0"
+  "message": "RAG Analytics API is running",
+  "version": "1.0.0",
+  "features": {
+    "excel_upload": true,
+    "llm_queries": true,
+    "embeddings": true,
+    "database_connections": true,
+    "visualizations": true,
+    "ai_processing": true
+  },
+  "timestamp": "2024-01-01T00:00:00.000Z"
 }
 ```
 
@@ -547,7 +573,7 @@ preload_app = True
 #### Update Service File
 ```ini
 [Service]
-ExecStart=/opt/rag-analytics/venv/bin/gunicorn -c /opt/rag-analytics/gunicorn.conf.py enhanced_backend:app
+ExecStart=/opt/rag-analytics/venv/bin/gunicorn -c /opt/rag-analytics/gunicorn.conf.py app:app
 ```
 
 ### 2. Database Optimization (if using)

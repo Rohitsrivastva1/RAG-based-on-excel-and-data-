@@ -23,11 +23,11 @@ code {
   flex-direction: column;
 }
 
-.main-content {
+.main-content { 
   flex: 1;
   padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: 1500px;
+
   width: 100%;
 }
 

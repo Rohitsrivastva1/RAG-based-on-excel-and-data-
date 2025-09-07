@@ -224,28 +224,49 @@ async def upload_excel(
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     """Upload Excel/CSV file and build vector index."""
+    print(f"\n📁 UPLOAD EXCEL ENDPOINT")
+    print(f"   Filename: {file.filename}")
+    print(f"   Content type: {file.content_type}")
+    print(f"   Session ID provided: {session_id}")
+    
     try:
         with LogContext():
             # Validate file
             if not file.filename:
+                print(f"   ❌ No file provided")
                 raise HTTPException(status_code=400, detail="No file provided")
             
+            print(f"   ✅ File provided: {file.filename}")
+            
             # Check file size
+            print(f"   📏 Reading file content...")
             content = await file.read()
+            file_size_mb = len(content) / (1024 * 1024)
+            print(f"   📏 File size: {file_size_mb:.2f} MB")
+            
             if not validate_file_size(len(content), settings.max_file_size_mb):
+                print(f"   ❌ File too large: {file_size_mb:.2f} MB > {settings.max_file_size_mb} MB")
                 raise HTTPException(
                     status_code=400,
                     detail=f"File too large. Maximum size: {settings.max_file_size_mb}MB"
                 )
             
+            print(f"   ✅ File size validation passed")
+            
             # Generate session ID if not provided
             if not session_id:
                 session_id = str(uuid.uuid4())
+                print(f"   🆔 Generated new session ID: {session_id}")
+            else:
+                print(f"   🆔 Using provided session ID: {session_id}")
             
             # Read file with pandas
+            print(f"   📊 Reading file with pandas...")
             if file.filename.endswith('.csv'):
+                print(f"   📄 Detected CSV file")
                 df = pd.read_csv(pd.io.common.BytesIO(content))
             elif file.filename.endswith(('.xlsx', '.xls')):
+                print(f"   📊 Detected Excel file")
                 df = pd.read_excel(pd.io.common.BytesIO(content))
             else:
                 raise HTTPException(
@@ -335,33 +356,51 @@ async def ask_question(
     session_id: str = Form(...)
 ):
     """Process natural language question with data."""
+    print(f"\n🎯 ASK QUESTION ENDPOINT")
+    print(f"   Question: '{question}'")
+    print(f"   Session ID: {session_id}")
+    
     try:
         with LogContext():
             # Sanitize input
             question = sanitize_input(question)
+            print(f"   Sanitized question: '{question}'")
             
             # Get session
+            print(f"🔍 Getting session data...")
             session_store = get_session_store()
             session_data = session_store.get(session_id)
             
             if not session_data:
+                print(f"   ❌ Session not found: {session_id}")
                 raise HTTPException(status_code=404, detail="Session not found")
-            print("Processing file question")
-            print(question)
-            print(session_id)
-            print(session_data.data)
-            print(session_data.data_source == DataSource.FILE.value)
+            
+            print(f"   ✅ Session found:")
+            print(f"     - Data source: {session_data.data_source}")
+            print(f"     - Data type: {type(session_data.data)}")
+            print(f"     - Data shape: {session_data.data.shape if hasattr(session_data.data, 'shape') else 'N/A'}")
+            
             # Process based on data source
             if session_data.data_source == DataSource.FILE.value:
-                print("Processing file question inside if ")
-                print(question)
-                print(session_id)
-                print(session_data.data)
+                print(f"📁 Processing FILE data source")
+                print(f"   DataFrame info:")
+                print(f"     - Shape: {session_data.data.shape}")
+                print(f"     - Columns: {list(session_data.data.columns)}")
+                print(f"     - Data types: {dict(session_data.data.dtypes)}")
+                
                 result = await process_file_question(question, session_id, session_data.data)
+                
             elif session_data.data_source == DataSource.DATABASE.value:
+                print(f"🗄️ Processing DATABASE data source")
                 result = await process_database_question(question, session_id)
             else:
+                print(f"   ❌ Unknown data source: {session_data.data_source}")
                 raise HTTPException(status_code=400, detail="Unknown data source")
+            
+            print(f"✅ ASK QUESTION COMPLETE")
+            print(f"   Result type: {type(result)}")
+            print(f"   Result question: {result.question}")
+            print(f"   Result answer preview: {str(result.answer)[:100]}...")
             
             return result
             
@@ -378,71 +417,83 @@ async def process_file_question(
     df: pd.DataFrame
 ) -> AskResponse:
     """Process question for file data."""
+    print(f"\n🚀 PROCESSING FILE QUESTION")
+    print(f"   Question: '{question}'")
+    print(f"   Session ID: {session_id}")
+    print(f"   DataFrame shape: {df.shape}")
+    print(f"   DataFrame columns: {list(df.columns)}")
+    
     try:
         start_time = datetime.utcnow()
-        print("Processing file question inside process_file_question")
-        print(question)
-        print(session_id)
-        print(df)
-        print(start_time)
-        print(settings.enable_embeddings)
+        print(f"   Start time: {start_time}")
+        print(f"   Embeddings enabled: {settings.enable_embeddings}")
         # Get relevant context using embeddings
+        print(f"🔍 Getting context from embeddings...")
         context = ""
         if settings.enable_embeddings:
             embedding_manager = get_embedding_manager()
-            print("Embedding manager")
-            print(embedding_manager)
+            print(f"   Embedding manager: {embedding_manager}")
             docs = embedding_manager.query_index(session_id, question, settings.top_k)
-            print("Docs")
-            print(docs)
+            print(f"   Retrieved {len(docs) if docs else 0} documents")
             if docs:
                 context_parts = []
                 for doc in docs:
                     context_parts.append(doc['text'])
                 context = "\n".join(context_parts)
-            print("Context")
-            print(context)
+                print(f"   Context length: {len(context)} characters")
+                print(f"   Context preview: {context[:200]}...")
+            else:
+                print(f"   No context documents found")
+        else:
+            print(f"   Embeddings disabled, skipping context retrieval")
+        
         # Process with LLM agent if available
+        print(f"🤖 Processing with LLM agent...")
         try:
             llm_agent = get_llm_agent()
-            print("LLM agent")
-            print(llm_agent)
+            print(f"   LLM agent: {llm_agent}")
             if not llm_agent.is_available():
+                print(f"   ❌ LLM agent not available")
                 raise HTTPException(
                     status_code=503, 
                     detail="LLM agent not available. LlamaIndex and LangChain are required for this system."
                 )
             
+            print(f"   ✅ LLM agent available, processing...")
             logger.info(f"Using LLM agent for question: {question}")
             agent_result = llm_agent.process_with_agent(df, question, context)
-            print("Agent result")
+            
+            print(f"   Agent result received:")
+            print(f"   - Success: {agent_result['success']}")
+            print(f"   - Query type: {agent_result['query_type']}")
+            print(f"   - Answer type: {type(agent_result['answer'])}")
+            print(f"   - Answer preview: {str(agent_result['answer'])[:200]}...")
+            print(f"   - Visualization: {agent_result.get('visualization')}")
+            print(f"   - Generated code: {agent_result.get('generated_code')}")
+            
             if not agent_result['success']:
+                print(f"   ❌ Agent processing failed")
                 raise HTTPException(
                     status_code=500,
                     detail=f"LLM agent processing failed: {agent_result.get('error', 'Unknown error')}"
                 )
             
             if agent_result['success']:
-                    duration = (datetime.utcnow() - start_time).total_seconds()
-                    print("Duration")
-                    print(duration)
-                    print("Answer")
-                    print(agent_result['answer'])
-                    print("Query type")
-                    print(agent_result['query_type'])
-                    print("Generated code")
-                    print(agent_result.get('generated_code'))
-                    print("Row count")
-                    print(len(df))
-                    print("Visualization")
-                    print(agent_result.get('visualization'))
-                    print("Session id")
-                    print(session_id)
-                    print("Timestamp")
-                    print(datetime.utcnow())
-                    print("Duration ms")
-                    print(duration * 1000)
-                    return AskResponse(
+                duration = (datetime.utcnow() - start_time).total_seconds()
+                print(f"   ⏱️ Total processing duration: {duration:.2f} seconds")
+                print(f"   📊 DataFrame info:")
+                print(f"     - Rows: {len(df)}")
+                print(f"     - Columns: {len(df.columns)}")
+                print(f"     - Column names: {list(df.columns)}")
+                print(f"   📤 Response details:")
+                print(f"     - Answer: {str(agent_result['answer'])[:100]}...")
+                print(f"     - Query type: {agent_result['query_type']}")
+                print(f"     - Generated code: {agent_result.get('generated_code')}")
+                print(f"     - Visualization: {agent_result.get('visualization')}")
+                print(f"     - Session ID: {session_id}")
+                print(f"     - Duration: {duration * 1000:.2f}ms")
+                
+                return AskResponse(
                         question=question,
                         answer=agent_result['answer'],
                         query_type=agent_result['query_type'],
